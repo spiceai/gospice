@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/apache/arrow/go/v10/arrow/array"
 	"github.com/apache/arrow/go/v10/arrow/flight"
@@ -12,8 +13,8 @@ import (
 )
 
 const (
-	MAX_MESSAGE_SIZE_BYTES   = 100 * 1024 * 1024
-	DEFAULT_QUERY_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
+	MAX_MESSAGE_SIZE_BYTES = 100 * 1024 * 1024
+	DEFAULT_QUERY_TIMEOUT  = 10 * time.Minute
 )
 
 // SpiceClient is a client for Spice.xyz - Data and AI infrastructure for web3
