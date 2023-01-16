@@ -81,7 +81,7 @@ func (c *SpiceClient) Query(ctx context.Context, query string) (array.RecordRead
 	_, hasDeadline := ctx.Deadline()
 	if !hasDeadline {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, DEFAULT_QUERY_TIMEOUT_MS)
+		ctx, cancel = context.WithTimeout(ctx, DEFAULT_QUERY_TIMEOUT)
 		defer cancel()
 	}
 
