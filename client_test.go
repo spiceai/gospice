@@ -52,7 +52,7 @@ func TestBasicQuery(t *testing.T) {
 			defer col0.Release()
 
 			blockNumber := col0.(*array.Int64).Value(0)
-			if blockNumber > 16410468 {
+			if blockNumber <= 16410468 {
 				t.Fatalf("Expected block number > 16410468, got %d", blockNumber)
 			}
 
@@ -105,7 +105,7 @@ func TestBasicQuery(t *testing.T) {
 			defer col0.Release()
 
 			blockNumber := col0.(*array.Int64).Value(0)
-			if blockNumber > 38099309 {
+			if blockNumber <= 38099309 {
 				t.Fatalf("Expected block number > 38099309, got %d", blockNumber)
 			}
 
