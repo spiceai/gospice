@@ -24,7 +24,7 @@ defer spice.Close()
 1. Initialize the SpiceClient.
 
 ```go
-if err := spice.Init(context.Background(), "API Key"); err != nil {
+if err := spice.Init("API Key"); err != nil {
     panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 }
 ```
@@ -32,7 +32,7 @@ if err := spice.Init(context.Background(), "API Key"); err != nil {
 1. Execute a query and get back an Apache Arrow Reader.
 
 ```go
-    reader, err := spice.Query("SELECT * FROM eth.recent_blocks ORDER BY block_number LIMIT 10")
+    reader, err := spice.Query(context.Background(), "SELECT * FROM eth.recent_blocks ORDER BY block_number LIMIT 10")
     if err != nil {
         panic(fmt.Errorf("error querying: %w", err))
     }
