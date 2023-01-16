@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"strings"
 	"time"
@@ -9,7 +10,7 @@ import (
 	"github.com/apache/arrow/go/v10/arrow/array"
 	"github.com/apache/arrow/go/v10/arrow/flight"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 )
 
 const (
@@ -41,12 +42,17 @@ func (c *SpiceClient) Init(apiKey string) error {
 		return fmt.Errorf("apiKey is invalid")
 	}
 
+	systemCertPool, err := x509.SystemCertPool()
+	if err != nil {
+		return fmt.Errorf("error getting system cert pool: %w", err)
+	}
+
 	// Creating client connected to Spice
 	client, err := flight.NewClientWithMiddleware(
 		"flight.spiceai.io:443",
 		nil,
 		nil,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(systemCertPool, "")),
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
 			grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES),
