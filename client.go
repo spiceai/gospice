@@ -12,14 +12,17 @@ import (
 )
 
 const (
-	MAX_MESSAGE_SIZE_BYTES = 100 * 1024 * 1024
+	MAX_MESSAGE_SIZE_BYTES   = 100 * 1024 * 1024
+	DEFAULT_QUERY_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
+	DEFAULT_INIT_TIMEOUT_MS  = 10 * 1000      // 10 seconds
 )
 
 // SpiceClient is a client for Spice.xyz - Data and AI infrastructure for web3
 // https://spice.xyz
 // For documentation visit https://docs.spice.xyz/sdks/go-sdk
 type SpiceClient struct {
-	authContext  context.Context
+	appId        string
+	apiKey       string
 	flightClient flight.Client
 }
 
@@ -29,7 +32,7 @@ func NewSpiceClient() *SpiceClient {
 }
 
 // Init initializes the SpiceClient
-func (c *SpiceClient) Init(ctx context.Context, apiKey string) error {
+func (c *SpiceClient) Init(apiKey string) error {
 	if apiKey == "" {
 		return fmt.Errorf("apiKey is required")
 	}
@@ -53,11 +56,8 @@ func (c *SpiceClient) Init(ctx context.Context, apiKey string) error {
 		return fmt.Errorf("Error creating Spice Flight client: %w", err)
 	}
 
-	authContext, err := client.AuthenticateBasicToken(ctx, apiKeyParts[0], apiKey)
-	if err != nil {
-		return fmt.Errorf("Error authenticating with Spice.xyz: %w", err)
-	}
-	c.authContext = authContext
+	c.appId = apiKeyParts[0]
+	c.apiKey = apiKey
 	c.flightClient = client
 
 	return nil
@@ -73,9 +73,21 @@ func (c *SpiceClient) Close() error {
 
 // Query executes a query against Spice.xyz and returns a Apache Arrow RecordReader
 // For more information on Apache Arrow RecordReader visit https://godoc.org/github.com/apache/arrow/go/arrow/array#RecordReader
-func (c *SpiceClient) Query(query string) (array.RecordReader, error) {
-	if c.flightClient == nil || c.authContext == nil {
+func (c *SpiceClient) Query(ctx context.Context, query string) (array.RecordReader, error) {
+	if c.flightClient == nil {
 		return nil, fmt.Errorf("SpiceClient is not initialized")
+	}
+
+	_, hasDeadline := ctx.Deadline()
+	if !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DEFAULT_QUERY_TIMEOUT_MS)
+		defer cancel()
+	}
+
+	authContext, err := c.flightClient.AuthenticateBasicToken(ctx, c.appId, c.apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("Error authenticating with Spice.xyz: %w", err)
 	}
 
 	fd := &flight.FlightDescriptor{
@@ -84,12 +96,12 @@ func (c *SpiceClient) Query(query string) (array.RecordReader, error) {
 	}
 
 	var info *flight.FlightInfo
-	info, err := c.flightClient.GetFlightInfo(c.authContext, fd)
+	info, err = c.flightClient.GetFlightInfo(authContext, fd)
 	if err != nil {
 		return nil, err
 	}
 
-	stream, err := c.flightClient.DoGet(c.authContext, info.Endpoint[0].Ticket)
+	stream, err := c.flightClient.DoGet(authContext, info.Endpoint[0].Ticket)
 	if err != nil {
 		return nil, err
 	}

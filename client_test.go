@@ -18,12 +18,12 @@ func TestBasicQuery(t *testing.T) {
 	spice := NewSpiceClient()
 	defer spice.Close()
 
-	if err := spice.Init(context.Background(), TEST_API_KEY); err != nil {
+	if err := spice.Init(TEST_API_KEY); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 	}
 
 	t.Run("Recent Ethereum Blocks", func(t *testing.T) {
-		reader, err := spice.Query("SELECT number, \"timestamp\", hash FROM eth.recent_blocks ORDER BY number LIMIT 10")
+		reader, err := spice.Query(context.Background(), "SELECT number, \"timestamp\", hash FROM eth.recent_blocks ORDER BY number LIMIT 10")
 		if err != nil {
 			panic(fmt.Errorf("error querying: %w", err))
 		}
@@ -76,7 +76,7 @@ func TestBasicQuery(t *testing.T) {
 	})
 
 	t.Run("Recent Polygon Blocks", func(t *testing.T) {
-		reader, err := spice.Query("SELECT number, \"timestamp\", hash FROM polygon.recent_blocks ORDER BY number LIMIT 10")
+		reader, err := spice.Query(context.Background(), "SELECT number, \"timestamp\", hash FROM polygon.recent_blocks ORDER BY number LIMIT 10")
 		if err != nil {
 			panic(fmt.Errorf("error querying: %w", err))
 		}
