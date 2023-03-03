@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/spiceai/gospice"
 )
 
 func main() {
-	spice := NewSpiceClient()
+	spice := gospice.NewSpiceClient()
 	defer spice.Close()
 
 	if err := spice.Init("3437|89d6b41cd0034cd68eea704f5e88779d"); err != nil {
