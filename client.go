@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/apache/arrow/go/v10/arrow/array"
 	"github.com/apache/arrow/go/v10/arrow/flight"
@@ -15,7 +14,6 @@ import (
 
 const (
 	MAX_MESSAGE_SIZE_BYTES = 100 * 1024 * 1024
-	DEFAULT_QUERY_TIMEOUT  = 10 * time.Minute
 )
 
 // SpiceClient is a client for Spice.xyz - Data and AI infrastructure for web3
@@ -59,7 +57,7 @@ func (c *SpiceClient) Init(apiKey string) error {
 		),
 	)
 	if err != nil {
-		return fmt.Errorf("Error creating Spice Flight client: %w", err)
+		return fmt.Errorf("error creating Spice Flight client: %w", err)
 	}
 
 	c.appId = apiKeyParts[0]
@@ -84,16 +82,9 @@ func (c *SpiceClient) Query(ctx context.Context, query string) (array.RecordRead
 		return nil, fmt.Errorf("SpiceClient is not initialized")
 	}
 
-	_, hasDeadline := ctx.Deadline()
-	if !hasDeadline {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, DEFAULT_QUERY_TIMEOUT)
-		defer cancel()
-	}
-
 	authContext, err := c.flightClient.AuthenticateBasicToken(ctx, c.appId, c.apiKey)
 	if err != nil {
-		return nil, fmt.Errorf("Error authenticating with Spice.xyz: %w", err)
+		return nil, fmt.Errorf("error authenticating with Spice.xyz: %w", err)
 	}
 
 	fd := &flight.FlightDescriptor{
