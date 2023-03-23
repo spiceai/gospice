@@ -23,11 +23,20 @@ type SpiceClient struct {
 	appId        string
 	apiKey       string
 	flightClient flight.Client
+	address      string
 }
 
 // NewSpiceClient creates a new SpiceClient
 func NewSpiceClient() *SpiceClient {
-	return &SpiceClient{}
+	return &SpiceClient{
+		address: "flight.spiceai.io:443",
+	}
+}
+
+func NewSpiceClientWithAddress(address string) *SpiceClient {
+	return &SpiceClient{
+		address: address,
+	}
 }
 
 // Init initializes the SpiceClient
@@ -47,7 +56,7 @@ func (c *SpiceClient) Init(apiKey string) error {
 
 	// Creating client connected to Spice
 	client, err := flight.NewClientWithMiddleware(
-		"flight.spiceai.io:443",
+		c.address,
 		nil,
 		nil,
 		grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(systemCertPool, "")),
