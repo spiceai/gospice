@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apache/arrow/go/v10/arrow/array"
+	"github.com/apache/arrow/go/v11/arrow/array"
 )
 
 const (

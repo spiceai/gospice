@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/apache/arrow/go/v10/arrow/array"
-	"github.com/apache/arrow/go/v10/arrow/flight"
+	"github.com/apache/arrow/go/v11/arrow/array"
+	"github.com/apache/arrow/go/v11/arrow/flight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
