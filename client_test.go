@@ -155,8 +155,8 @@ func TestBasicQuery(t *testing.T) {
 
 	t.Run("Test prices in specific range", func(t *testing.T) {
 		params := &QuoteParams{
-			startTime: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
-			endTime:   time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC),
+			StartTime: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+			EndTime:   time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC),
 		}
 
 		quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
@@ -169,9 +169,9 @@ func TestBasicQuery(t *testing.T) {
 
 	t.Run("Test prices in specific range with specific duration", func(t *testing.T) {
 		params := &QuoteParams{
-			startTime:   time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
-			endTime:     time.Date(2023, 1, 2, 0, 0, 0, 0, time.UTC),
-			granularity: "24h",
+			StartTime:   time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+			EndTime:     time.Date(2023, 1, 2, 0, 0, 0, 0, time.UTC),
+			Granularity: "24h",
 		}
 
 		quote, err := spice.GetPrices(context.Background(), "eth-usd", params)

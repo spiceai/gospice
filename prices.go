@@ -24,23 +24,23 @@ type Price struct {
 }
 
 type QuoteParams struct {
-	startTime   time.Time
-	endTime     time.Time
-	granularity string
+	StartTime   time.Time
+	EndTime     time.Time
+	Granularity string
 }
 
 func (c *SpiceClient) GetPrices(ctx context.Context, pair string, params *QuoteParams) (*Quote, error) {
 	urlBuilder := strings.Builder{}
 	urlBuilder.WriteString(fmt.Sprintf("https://data.spiceai.io/v0.1/prices/%s?preview=true", pair))
 	if params != nil {
-		if !params.startTime.IsZero() {
-			urlBuilder.WriteString(fmt.Sprintf("&start=%d", params.startTime.Unix()))
+		if !params.StartTime.IsZero() {
+			urlBuilder.WriteString(fmt.Sprintf("&start=%d", params.StartTime.Unix()))
 		}
-		if !params.endTime.IsZero() {
-			urlBuilder.WriteString(fmt.Sprintf("&end=%d", params.endTime.Unix()))
+		if !params.EndTime.IsZero() {
+			urlBuilder.WriteString(fmt.Sprintf("&end=%d", params.EndTime.Unix()))
 		}
-		if params.granularity != "" {
-			urlBuilder.WriteString(fmt.Sprintf("&granularity=%s", params.granularity))
+		if params.Granularity != "" {
+			urlBuilder.WriteString(fmt.Sprintf("&granularity=%s", params.Granularity))
 		}
 	}
 
