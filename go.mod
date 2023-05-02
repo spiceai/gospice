@@ -3,7 +3,7 @@ module github.com/spiceai/gospice
 go 1.20
 
 require (
-	github.com/apache/arrow/go/v11 v11.0.0
+	github.com/apache/arrow/go/v10 v10.0.1
 	github.com/bradleyjkemp/cupaloy v2.3.0+incompatible
 	google.golang.org/grpc v1.52.0
 )

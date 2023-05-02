@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/apache/arrow/go/v11/arrow/flight"
+	"github.com/apache/arrow/go/v10/arrow/flight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
