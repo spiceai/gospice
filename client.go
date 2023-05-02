@@ -34,8 +34,13 @@ func NewSpiceClient() *SpiceClient {
 
 func NewSpiceClientWithAddress(address string) *SpiceClient {
 	return &SpiceClient{
-		address:    address,
-		httpClient: http.Client{},
+		address: address,
+		httpClient: http.Client{
+			Transport: &http.Transport{
+				MaxIdleConnsPerHost: 10,
+				DisableCompression:  false,
+			},
+		},
 	}
 }
 
