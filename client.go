@@ -75,7 +75,7 @@ func (c *SpiceClient) Init(apiKey string) error {
 		c.address,
 		nil,
 		nil,
-		grpcDialOpts,
+		grpcDialOpts...,
 	)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Flight client: %w", err)
