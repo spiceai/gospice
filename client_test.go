@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/apache/arrow/go/v11/arrow/array"
+	"github.com/bradleyjkemp/cupaloy"
 )
 
 const (
@@ -126,5 +127,58 @@ func TestBasicQuery(t *testing.T) {
 				t.Fatalf("Expected hash length 66, got %d", len(hash))
 			}
 		}
+	})
+
+	// Test Prices
+	t.Run("Test prices latest", func(t *testing.T) {
+		quote, err := spice.GetPrices(context.Background(), "eth-usd", nil)
+		if err != nil {
+			t.Fatalf("error querying: %s", err.Error())
+		}
+
+		if quote == nil {
+			t.Fatalf("expected quote, got nil")
+		}
+
+		if len(quote.Prices) != 10 {
+			t.Fatalf("expected 10 prices, got %d %+v", len(quote.Prices), quote.Prices)
+		}
+
+		if quote.Pair != "ETH-USD" {
+			t.Fatalf("expected ETH-USD, got %s", quote.Pair)
+		}
+
+		if quote.Prices[0].Price == 0 {
+			t.Fatalf("expected price > 0, got %f", quote.Prices[0].Price)
+		}
+	})
+
+	t.Run("Test prices in specific range", func(t *testing.T) {
+		params := &QuoteParams{
+			startTime: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+			endTime:   time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC),
+		}
+
+		quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
+		if err != nil {
+			t.Fatalf("error querying: %s", err.Error())
+		}
+
+		cupaloy.SnapshotT(t, quote)
+	})
+
+	t.Run("Test prices in specific range with specific duration", func(t *testing.T) {
+		params := &QuoteParams{
+			startTime:   time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+			endTime:     time.Date(2023, 1, 2, 0, 0, 0, 0, time.UTC),
+			granularity: "24h",
+		}
+
+		quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
+		if err != nil {
+			t.Fatalf("error querying: %s", err.Error())
+		}
+
+		cupaloy.SnapshotT(t, quote)
 	})
 }
