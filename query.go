@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/apache/arrow/go/v11/arrow/array"
-	"github.com/apache/arrow/go/v11/arrow/flight"
+	"github.com/apache/arrow/go/v10/arrow/array"
+	"github.com/apache/arrow/go/v10/arrow/flight"
 )
 
 // Query executes a query against Spice.xyz and returns a Apache Arrow RecordReader
