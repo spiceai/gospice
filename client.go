@@ -9,6 +9,7 @@ import (
 	"github.com/apache/arrow/go/v11/arrow/flight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
@@ -64,7 +65,7 @@ func (c *SpiceClient) Init(apiKey string) error {
 		grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES))}
 
 	if strings.HasPrefix("grpc://", c.address) {
-		grpcDialOpts = append(grpcDialOpts, grpc.WithInsecure())
+		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	} else {
 		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(systemCertPool, "")))
 	}
