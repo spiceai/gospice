@@ -65,6 +65,7 @@ func (c *SpiceClient) Init(apiKey string) error {
 		grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES))}
 
 	if strings.HasPrefix("grpc://", c.address) {
+		c.address = strings.TrimPrefix(c.address, "grpc://")
 		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	} else {
 		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(systemCertPool, "")))
