@@ -1,12 +1,11 @@
 package gospice
 
 import (
-	"context"
 	"crypto/x509"
 	"fmt"
+	"net/http"
 	"strings"
 
-	"github.com/apache/arrow/go/v11/arrow/array"
 	"github.com/apache/arrow/go/v11/arrow/flight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -20,22 +19,28 @@ const (
 // https://spice.xyz
 // For documentation visit https://docs.spice.xyz/sdks/go-sdk
 type SpiceClient struct {
-	appId        string
-	apiKey       string
+	appId   string
+	apiKey  string
+	address string
+
 	flightClient flight.Client
-	address      string
+	httpClient   http.Client
 }
 
 // NewSpiceClient creates a new SpiceClient
 func NewSpiceClient() *SpiceClient {
-	return &SpiceClient{
-		address: "flight.spiceai.io:443",
-	}
+	return NewSpiceClientWithAddress("flight.spiceai.io:443")
 }
 
 func NewSpiceClientWithAddress(address string) *SpiceClient {
 	return &SpiceClient{
 		address: address,
+		httpClient: http.Client{
+			Transport: &http.Transport{
+				MaxIdleConnsPerHost: 10,
+				DisableCompression:  false,
+			},
+		},
 	}
 }
 
@@ -54,8 +59,8 @@ func (c *SpiceClient) Init(apiKey string) error {
 		return fmt.Errorf("error getting system cert pool: %w", err)
 	}
 
-	// Creating client connected to Spice
-	client, err := flight.NewClientWithMiddleware(
+	// Creating flightClient connected to Spice
+	flightClient, err := flight.NewClientWithMiddleware(
 		c.address,
 		nil,
 		nil,
@@ -71,7 +76,7 @@ func (c *SpiceClient) Init(apiKey string) error {
 
 	c.appId = apiKeyParts[0]
 	c.apiKey = apiKey
-	c.flightClient = client
+	c.flightClient = flightClient
 
 	return nil
 }
@@ -81,41 +86,7 @@ func (c *SpiceClient) Close() error {
 	if c.flightClient != nil {
 		return c.flightClient.Close()
 	}
+	c.httpClient.CloseIdleConnections()
+
 	return nil
-}
-
-// Query executes a query against Spice.xyz and returns a Apache Arrow RecordReader
-// For more information on Apache Arrow RecordReader visit https://godoc.org/github.com/apache/arrow/go/arrow/array#RecordReader
-func (c *SpiceClient) Query(ctx context.Context, query string) (array.RecordReader, error) {
-	if c.flightClient == nil {
-		return nil, fmt.Errorf("SpiceClient is not initialized")
-	}
-
-	authContext, err := c.flightClient.AuthenticateBasicToken(ctx, c.appId, c.apiKey)
-	if err != nil {
-		return nil, fmt.Errorf("error authenticating with Spice.xyz: %w", err)
-	}
-
-	fd := &flight.FlightDescriptor{
-		Type: flight.DescriptorCMD,
-		Cmd:  []byte(query),
-	}
-
-	var info *flight.FlightInfo
-	info, err = c.flightClient.GetFlightInfo(authContext, fd)
-	if err != nil {
-		return nil, err
-	}
-
-	stream, err := c.flightClient.DoGet(authContext, info.Endpoint[0].Ticket)
-	if err != nil {
-		return nil, err
-	}
-
-	rdr, err := flight.NewRecordReader(stream)
-	if err != nil {
-		return nil, err
-	}
-
-	return rdr, err
 }

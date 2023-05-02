@@ -1,0 +1,101 @@
+(*gospice.Quote)({
+  Pair: (string) (len=7) "ETH-USD",
+  Prices: ([]gospice.Price) (len=12) {
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T00:05:00Z",
+      Price: (float64) 1194.94,
+      High: (float64) 1195.6,
+      Low: (float64) 1194.58,
+      Open: (float64) 1195.25,
+      Close: (float64) 1194.94
+    },
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T00:10:00Z",
+      Price: (float64) 1194.24,
+      High: (float64) 1196,
+      Low: (float64) 1194.14,
+      Open: (float64) 1195.5,
+      Close: (float64) 1194.24
+    },
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T00:15:00Z",
+      Price: (float64) 1193.81,
+      High: (float64) 1195.18,
+      Low: (float64) 1193.6,
+      Open: (float64) 1194.66,
+      Close: (float64) 1193.81
+    },
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T00:20:00Z",
+      Price: (float64) 1195.36,
+      High: (float64) 1195.39,
+      Low: (float64) 1193.42,
+      Open: (float64) 1193.77,
+      Close: (float64) 1195.36
+    },
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T00:25:00Z",
+      Price: (float64) 1195.11,
+      High: (float64) 1195.7,
+      Low: (float64) 1195.07,
+      Open: (float64) 1195.26,
+      Close: (float64) 1195.11
+    },
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T00:30:00Z",
+      Price: (float64) 1195.23,
+      High: (float64) 1195.95,
+      Low: (float64) 1194.11,
+      Open: (float64) 1195.2,
+      Close: (float64) 1195.23
+    },
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T00:35:00Z",
+      Price: (float64) 1193.68,
+      High: (float64) 1195.72,
+      Low: (float64) 1192.88,
+      Open: (float64) 1195.72,
+      Close: (float64) 1193.68
+    },
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T00:40:00Z",
+      Price: (float64) 1193.6,
+      High: (float64) 1193.84,
+      Low: (float64) 1191.87,
+      Open: (float64) 1193.66,
+      Close: (float64) 1193.6
+    },
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T00:45:00Z",
+      Price: (float64) 1193.26,
+      High: (float64) 1193.54,
+      Low: (float64) 1192.17,
+      Open: (float64) 1193.4,
+      Close: (float64) 1193.26
+    },
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T00:50:00Z",
+      Price: (float64) 1193.89,
+      High: (float64) 1194.44,
+      Low: (float64) 1192.61,
+      Open: (float64) 1192.75,
+      Close: (float64) 1193.89
+    },
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T00:55:00Z",
+      Price: (float64) 1194,
+      High: (float64) 1194.57,
+      Low: (float64) 1193.33,
+      Open: (float64) 1194.01,
+      Close: (float64) 1194
+    },
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-01T01:00:00Z",
+      Price: (float64) 1193.33,
+      High: (float64) 1194.45,
+      Low: (float64) 1193.2,
+      Open: (float64) 1194.29,
+      Close: (float64) 1193.33
+    }
+  }
+})

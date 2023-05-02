@@ -1,0 +1,13 @@
+(*gospice.Quote)({
+  Pair: (string) (len=7) "ETH-USD",
+  Prices: ([]gospice.Price) (len=1) {
+    (gospice.Price) {
+      Timestamp: (string) (len=20) "2023-01-02T00:00:00Z",
+      Price: (float64) 1192.1,
+      High: (float64) 1204.17,
+      Low: (float64) 1190.03,
+      Open: (float64) 1195.25,
+      Close: (float64) 1192.1
+    }
+  }
+})
