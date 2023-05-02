@@ -9,6 +9,7 @@ import (
 	"github.com/apache/arrow/go/v10/arrow/flight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
@@ -59,16 +60,22 @@ func (c *SpiceClient) Init(apiKey string) error {
 		return fmt.Errorf("error getting system cert pool: %w", err)
 	}
 
+	grpcDialOpts := []grpc.DialOption{grpc.WithDefaultCallOptions(
+		grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
+		grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES))}
+
+	if strings.HasPrefix("grpc://", c.address) {
+		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	} else {
+		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(systemCertPool, "")))
+	}
+
 	// Creating flightClient connected to Spice
 	flightClient, err := flight.NewClientWithMiddleware(
 		c.address,
 		nil,
 		nil,
-		grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(systemCertPool, "")),
-		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
-			grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES),
-		),
+		grpcDialOpts...,
 	)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Flight client: %w", err)
