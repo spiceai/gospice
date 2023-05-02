@@ -59,16 +59,22 @@ func (c *SpiceClient) Init(apiKey string) error {
 		return fmt.Errorf("error getting system cert pool: %w", err)
 	}
 
+	grpcDialOpts := []grpc.DialOption{grpc.WithDefaultCallOptions(
+		grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
+		grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES))}
+
+	if strings.HasPrefix("grpc://", c.address) {
+		grpcDialOpts = append(grpcDialOpts, grpc.WithInsecure())
+	} else {
+		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(systemCertPool, "")))
+	}
+
 	// Creating flightClient connected to Spice
 	flightClient, err := flight.NewClientWithMiddleware(
 		c.address,
 		nil,
 		nil,
-		grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(systemCertPool, "")),
-		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
-			grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES),
-		),
+		grpcDialOpts,
 	)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Flight client: %w", err)
