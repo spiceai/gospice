@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/spiceai/gospice"
+
+	"github.com/spiceai/gospice/v2"
 )
 
 func main() {
