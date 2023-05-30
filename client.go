@@ -70,7 +70,7 @@ func (c *SpiceClient) Init(apiKey string) error {
 		return fmt.Errorf("error creating Spice Flight client: %w", err)
 	}
 
-	firecacheClient, err := createClient("grpc://firecache.spiceai.io:443", systemCertPool)
+	firecacheClient, err := createClient(c.firecacheAddress, systemCertPool)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Firecache client: %w", err)
 	}
