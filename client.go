@@ -1,11 +1,13 @@
 package gospice
 
 import (
+	"context"
 	"crypto/x509"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/apache/arrow/go/v12/arrow/array"
 	"github.com/apache/arrow/go/v12/arrow/flight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -20,22 +22,25 @@ const (
 // https://spice.xyz
 // For documentation visit https://docs.spice.xyz/sdks/go-sdk
 type SpiceClient struct {
-	appId   string
-	apiKey  string
-	address string
+	appId            string
+	apiKey           string
+	flightAddress    string
+	firecacheAddress string
 
-	flightClient flight.Client
-	httpClient   http.Client
+	flightClient    flight.Client
+	firecacheClient flight.Client
+	httpClient      http.Client
 }
 
 // NewSpiceClient creates a new SpiceClient
 func NewSpiceClient() *SpiceClient {
-	return NewSpiceClientWithAddress("flight.spiceai.io:443")
+	return NewSpiceClientWithAddress("flight.spiceai.io:443", "firecache.spiceai.io:443")
 }
 
-func NewSpiceClientWithAddress(address string) *SpiceClient {
+func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *SpiceClient {
 	return &SpiceClient{
-		address: address,
+		flightAddress:    flightAddress,
+		firecacheAddress: firecacheAddress,
 		httpClient: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 10,
@@ -60,31 +65,20 @@ func (c *SpiceClient) Init(apiKey string) error {
 		return fmt.Errorf("error getting system cert pool: %w", err)
 	}
 
-	grpcDialOpts := []grpc.DialOption{grpc.WithDefaultCallOptions(
-		grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
-		grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES))}
-
-	if strings.HasPrefix(c.address, "grpc://") {
-		c.address = strings.TrimPrefix(c.address, "grpc://")
-		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	} else {
-		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(systemCertPool, "")))
-	}
-
-	// Creating flightClient connected to Spice
-	flightClient, err := flight.NewClientWithMiddleware(
-		c.address,
-		nil,
-		nil,
-		grpcDialOpts...,
-	)
+	flightClient, err := createClient(c.flightAddress, systemCertPool)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Flight client: %w", err)
+	}
+
+	firecacheClient, err := createClient("grpc://firecache.spiceai.io:443", systemCertPool)
+	if err != nil {
+		return fmt.Errorf("error creating Spice Firecache client: %w", err)
 	}
 
 	c.appId = apiKeyParts[0]
 	c.apiKey = apiKey
 	c.flightClient = flightClient
+	c.firecacheClient = firecacheClient
 
 	return nil
 }
@@ -94,7 +88,69 @@ func (c *SpiceClient) Close() error {
 	if c.flightClient != nil {
 		return c.flightClient.Close()
 	}
+	if c.firecacheClient != nil {
+		return c.firecacheClient.Close()
+	}
 	c.httpClient.CloseIdleConnections()
 
 	return nil
+}
+
+func query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
+	if client == nil {
+		return nil, fmt.Errorf("Flight Client is not initialized")
+	}
+
+	authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("error authenticating with Spice.xyz: %w", err)
+	}
+
+	fd := &flight.FlightDescriptor{
+		Type: flight.DescriptorCMD,
+		Cmd:  []byte(sql),
+	}
+
+	var info *flight.FlightInfo
+	info, err = client.GetFlightInfo(authContext, fd)
+	if err != nil {
+		return nil, err
+	}
+
+	stream, err := client.DoGet(authContext, info.Endpoint[0].Ticket)
+	if err != nil {
+		return nil, err
+	}
+
+	rdr, err := flight.NewRecordReader(stream)
+	if err != nil {
+		return nil, err
+	}
+
+	return rdr, err
+}
+
+func createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
+	grpcDialOpts := []grpc.DialOption{grpc.WithDefaultCallOptions(
+		grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
+		grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES))}
+
+	if strings.HasPrefix(address, "grpc://") {
+		address = strings.TrimPrefix(address, "grpc://")
+		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	} else {
+		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(systemCertPool, "")))
+	}
+
+	client, err := flight.NewClientWithMiddleware(
+		address,
+		nil,
+		nil,
+		grpcDialOpts...,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }
