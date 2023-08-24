@@ -3,7 +3,7 @@ package gospice
 import (
 	"context"
 
-	"github.com/apache/arrow/go/v12/arrow/array"
+	"github.com/apache/arrow/go/v13/arrow/array"
 )
 
 // FireQuery executes a query against Spice.xyz Firecache and returns a Apache Arrow RecordReader
