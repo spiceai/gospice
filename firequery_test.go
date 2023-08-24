@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apache/arrow/go/v12/arrow/array"
+	"github.com/apache/arrow/go/v13/arrow/array"
 )
 
 // Execute a basic query and check for columns and rows
