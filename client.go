@@ -16,6 +16,7 @@ import (
 
 const (
 	MAX_MESSAGE_SIZE_BYTES = 100 * 1024 * 1024
+	DEFAULT_BASE_HTTP_URL  = "https://dev-data.spiceai.io"
 )
 
 // SpiceClient is a client for Spice.xyz - Data and AI infrastructure for web3
@@ -26,6 +27,7 @@ type SpiceClient struct {
 	apiKey           string
 	flightAddress    string
 	firecacheAddress string
+	baseHttpUrl      string
 
 	flightClient    flight.Client
 	firecacheClient flight.Client
@@ -41,6 +43,7 @@ func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *S
 	return &SpiceClient{
 		flightAddress:    flightAddress,
 		firecacheAddress: firecacheAddress,
+		baseHttpUrl:      DEFAULT_BASE_HTTP_URL,
 		httpClient: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 10,

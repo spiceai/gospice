@@ -26,7 +26,6 @@ type Price struct {
 }
 
 type QuoteV1 struct {
-	Pair      string            `mapstructure:"pair,omitempty" json:"pair,omitempty"`
 	Prices    map[string]string `mapstructure:"prices,omitempty" json:"prices,omitempty"`
 	MinPrice  string            `mapstructure:"minPrice,omitempty" json:"minPrice,omitempty"`
 	MaxPrice  string            `mapstructure:"maxPrice,omitempty" json:"maxPrice,omitempty"`
@@ -39,9 +38,10 @@ type QuoteParams struct {
 	Granularity string
 }
 
-func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) ([]QuoteV1, error) {
+func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) (map[string]QuoteV1, error) {
 	urlBuilder := strings.Builder{}
-	urlBuilder.WriteString("https://dev-data.spiceai.io/v1/prices/latest")
+	urlBuilder.WriteString(c.baseHttpUrl)
+	urlBuilder.WriteString("/v1/prices/latest")
 	if len(pairs) > 0 {
 		pairsStr := strings.Join(pairs, ",")
 		urlBuilder.WriteString(fmt.Sprintf("?pair=%s", pairsStr))
@@ -73,27 +73,23 @@ func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) ([]Qu
 	}
 
 	// Try to decode into a slice of Quote objects
-	var quotes []QuoteV1
+	var quotes map[string]QuoteV1
 	if err = json.NewDecoder(bytes.NewReader(data)).Decode(&quotes); err != nil {
-		// If decoding into a slice failed, try decoding into a single Quote
-		var singleQuote QuoteV1
-		if err = json.NewDecoder(bytes.NewReader(data)).Decode(&singleQuote); err != nil {
-			return nil, fmt.Errorf("error decoding response: %w", err)
-		}
-		return []QuoteV1{singleQuote}, nil
+		return nil, fmt.Errorf("error decoding response from: %w", err)
 	}
 
 	return quotes, nil
 }
 
-func (c *SpiceClient) GetV1Prices(ctx context.Context, pairs []string, params *QuoteParams) ([]Quote, error) {
+func (c *SpiceClient) GetV1Prices(ctx context.Context, pairs []string, params *QuoteParams) (map[string][]Price, error) {
 	urlBuilder := strings.Builder{}
-	urlBuilder.WriteString("https://dev-data.spiceai.io/v1/prices")
+	urlBuilder.WriteString(c.baseHttpUrl)
+	urlBuilder.WriteString("/v1/prices")
 	if len(pairs) > 0 {
 		pairsStr := strings.Join(pairs, ",")
 		urlBuilder.WriteString(fmt.Sprintf("?pair=%s", pairsStr))
 	} else {
-		return []Quote{}, nil
+		return map[string][]Price{}, nil
 	}
 	if params != nil {
 		if !params.StartTime.IsZero() {
@@ -127,7 +123,7 @@ func (c *SpiceClient) GetV1Prices(ctx context.Context, pairs []string, params *Q
 		return nil, fmt.Errorf("GET %s failed with status %d", url, resp.StatusCode)
 	}
 
-	var quotes []Quote
+	var quotes map[string][]Price
 	err = json.NewDecoder(resp.Body).Decode(&quotes)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding response: %w", err)
@@ -138,7 +134,8 @@ func (c *SpiceClient) GetV1Prices(ctx context.Context, pairs []string, params *Q
 
 func (c *SpiceClient) GetPrices(ctx context.Context, pair string, params *QuoteParams) (*Quote, error) {
 	urlBuilder := strings.Builder{}
-	urlBuilder.WriteString(fmt.Sprintf("https://data.spiceai.io/v0.1/prices/%s?preview=true", pair))
+	urlBuilder.WriteString(c.baseHttpUrl)
+	urlBuilder.WriteString(fmt.Sprintf("/v0.1/prices/%s?preview=true", pair))
 	if params != nil {
 		if !params.StartTime.IsZero() {
 			urlBuilder.WriteString(fmt.Sprintf("&start=%d", params.StartTime.Unix()))
