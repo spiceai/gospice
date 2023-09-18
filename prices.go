@@ -1,11 +1,9 @@
 package gospice
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
@@ -63,18 +61,13 @@ func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) (map[
 		return nil, fmt.Errorf("error executing request: %w", err)
 	}
 	defer resp.Body.Close()
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GET %s failed with status %d", url, resp.StatusCode)
 	}
 
 	// Try to decode into a slice of Quote objects
 	var quotes map[string]QuoteV1
-	if err = json.NewDecoder(bytes.NewReader(data)).Decode(&quotes); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&quotes); err != nil {
 		return nil, fmt.Errorf("error decoding response from: %w", err)
 	}
 
