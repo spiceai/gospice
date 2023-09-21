@@ -16,7 +16,7 @@ import (
 
 const (
 	MAX_MESSAGE_SIZE_BYTES = 100 * 1024 * 1024
-	DEFAULT_BASE_HTTP_URL  = "https://dev-data.spiceai.io"
+	DEFAULT_BASE_HTTP_URL  = "https://data.spiceai.io"
 )
 
 // SpiceClient is a client for Spice.xyz - Data and AI infrastructure for web3
