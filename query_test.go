@@ -131,25 +131,26 @@ func TestBasicQuery(t *testing.T) {
 
 	// Test Prices
 	t.Run("Test prices latest", func(t *testing.T) {
-		quote, err := spice.GetPrices(context.Background(), "eth-usd", nil)
+		quotes, err := spice.GetPrices(context.Background(), []string{"ETH-USD"}, nil)
 		if err != nil {
 			t.Fatalf("error querying: %s", err.Error())
 		}
 
-		if quote == nil {
+		if quotes == nil {
 			t.Fatalf("expected quote, got nil")
 		}
 
-		if len(quote.Prices) != 10 {
-			t.Fatalf("expected 10 prices, got %d %+v", len(quote.Prices), quote.Prices)
+		quote, exists := quotes["ETH-USD"]
+		if !exists {
+			t.Fatalf("expected quote for ETH-USD, did not get any")
 		}
 
-		if quote.Pair != "ETH-USD" {
-			t.Fatalf("expected ETH-USD, got %s", quote.Pair)
+		if len(quote) != 10 {
+			t.Fatalf("expected 10 prices, got %d %+v", len(quote), quote)
 		}
 
-		if quote.Prices[0].Price == 0 {
-			t.Fatalf("expected price > 0, got %f", quote.Prices[0].Price)
+		if quote[0].Price == 0 {
+			t.Fatalf("expected price > 0, got %f", quote[0].Price)
 		}
 	})
 
@@ -159,7 +160,7 @@ func TestBasicQuery(t *testing.T) {
 			EndTime:   time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC),
 		}
 
-		quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
+		quote, err := spice.GetPrices(context.Background(), []string{"ETH-USD"}, params)
 		if err != nil {
 			t.Fatalf("error querying: %s", err.Error())
 		}
@@ -174,7 +175,7 @@ func TestBasicQuery(t *testing.T) {
 			Granularity: "24h",
 		}
 
-		quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
+		quote, err := spice.GetPrices(context.Background(), []string{"ETH-USD"}, params)
 		if err != nil {
 			t.Fatalf("error querying: %s", err.Error())
 		}

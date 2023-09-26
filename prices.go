@@ -74,7 +74,7 @@ func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) (map[
 	return quotes, nil
 }
 
-func (c *SpiceClient) GetV1Prices(ctx context.Context, pairs []string, params *QuoteParams) (map[string][]Price, error) {
+func (c *SpiceClient) GetPrices(ctx context.Context, pairs []string, params *QuoteParams) (map[string][]Price, error) {
 	urlBuilder := strings.Builder{}
 	urlBuilder.WriteString(c.baseHttpUrl)
 	urlBuilder.WriteString("/v1/prices")
@@ -123,49 +123,4 @@ func (c *SpiceClient) GetV1Prices(ctx context.Context, pairs []string, params *Q
 	}
 
 	return quotes, nil
-}
-
-func (c *SpiceClient) GetPrices(ctx context.Context, pair string, params *QuoteParams) (*Quote, error) {
-	urlBuilder := strings.Builder{}
-	urlBuilder.WriteString(c.baseHttpUrl)
-	urlBuilder.WriteString(fmt.Sprintf("/v0.1/prices/%s?preview=true", pair))
-	if params != nil {
-		if !params.StartTime.IsZero() {
-			urlBuilder.WriteString(fmt.Sprintf("&start=%d", params.StartTime.Unix()))
-		}
-		if !params.EndTime.IsZero() {
-			urlBuilder.WriteString(fmt.Sprintf("&end=%d", params.EndTime.Unix()))
-		}
-		if params.Granularity != "" {
-			urlBuilder.WriteString(fmt.Sprintf("&granularity=%s", params.Granularity))
-		}
-	}
-
-	url := urlBuilder.String()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
-	}
-
-	req.Header.Set("X-API-Key", c.apiKey)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "gospice 0.1")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error executing request: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s failed with status %d", url, resp.StatusCode)
-	}
-
-	var quote Quote
-	err = json.NewDecoder(resp.Body).Decode(&quote)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding response: %w", err)
-	}
-
-	return &quote, nil
 }
