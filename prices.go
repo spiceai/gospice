@@ -9,11 +9,6 @@ import (
 	"time"
 )
 
-type Quote struct {
-	Pair   string  `json:"pair"`
-	Prices []Price `json:"prices"`
-}
-
 type Price struct {
 	Timestamp string  `json:"timestamp"`
 	Price     float64 `json:"price"`
@@ -23,7 +18,7 @@ type Price struct {
 	Close     float64 `json:"close"`
 }
 
-type QuoteV1 struct {
+type Quote struct {
 	Prices    map[string]string `mapstructure:"prices,omitempty" json:"prices,omitempty"`
 	MinPrice  string            `mapstructure:"minPrice,omitempty" json:"minPrice,omitempty"`
 	MaxPrice  string            `mapstructure:"maxPrice,omitempty" json:"maxPrice,omitempty"`
@@ -36,7 +31,7 @@ type QuoteParams struct {
 	Granularity string
 }
 
-func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) (map[string]QuoteV1, error) {
+func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) (map[string]Quote, error) {
 	urlBuilder := strings.Builder{}
 	urlBuilder.WriteString(c.baseHttpUrl)
 	urlBuilder.WriteString("/v1/prices/latest")
@@ -66,7 +61,7 @@ func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) (map[
 	}
 
 	// Try to decode into a slice of Quote objects
-	var quotes map[string]QuoteV1
+	var quotes map[string]Quote
 	if err = json.NewDecoder(resp.Body).Decode(&quotes); err != nil {
 		return nil, fmt.Errorf("error decoding response from: %w", err)
 	}
