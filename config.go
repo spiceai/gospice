@@ -8,25 +8,17 @@ type ClientConfig struct {
 	FirecacheUrl string `json:"firecache_url,omitempty"`
 }
 
-var DEFAULT_CLIENT_CONFIG = ClientConfig{
-	HttpUrl:      "https://data.spiceai.io",
-	FlightUrl:    "flight.spiceai.io:443",
-	FirecacheUrl: "firecache.spiceai.io:443",
+func LoadConfig() ClientConfig {
+	return ClientConfig{
+		HttpUrl:      getEnvOrDefault("SPICE_HTTP_URL", "https://data.spiceai.io"),
+		FirecacheUrl: getEnvOrDefault("SPICE_FIRECACHE_URL", "firecache.spiceai.io:443"),
+		FlightUrl:    getEnvOrDefault("SPICE_FLIGHT_URL", "flight.spiceai.io:443"),
+	}
 }
 
-func LoadConfig() ClientConfig {
-	base := DEFAULT_CLIENT_CONFIG
-
-	// Env variables
-	if v, exists := os.LookupEnv("SPICE_HTTP_URL"); exists {
-		base.HttpUrl = v
+func getEnvOrDefault(key string, defaultValue string) string {
+	if v, exists := os.LookupEnv(key); exists {
+		return v
 	}
-	if v, exists := os.LookupEnv("SPICE_FIRECACHE_URL"); exists {
-		base.FirecacheUrl = v
-	}
-	if v, exists := os.LookupEnv("SPICE_FLIGHT_URL"); exists {
-		base.FlightUrl = v
-	}
-
-	return base
+	return defaultValue
 }
