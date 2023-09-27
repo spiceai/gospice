@@ -18,13 +18,13 @@ func LoadConfig() ClientConfig {
 	base := DEFAULT_CLIENT_CONFIG
 
 	// Env variables
-	if v, exists := os.LookupEnv("GOSPICE_DEFAULT_HTTP_URL"); exists {
+	if v, exists := os.LookupEnv("SPICE_HTTP_URL"); exists {
 		base.HttpUrl = v
 	}
-	if v, exists := os.LookupEnv("GOSPICE_DEFAULT_FIRECACHE_URL"); exists {
+	if v, exists := os.LookupEnv("SPICE_FIRECACHE_URL"); exists {
 		base.FirecacheUrl = v
 	}
-	if v, exists := os.LookupEnv("GOSPICE_DEFAULT_FLIGHT_URL"); exists {
+	if v, exists := os.LookupEnv("SPICE_FLIGHT_URL"); exists {
 		base.FlightUrl = v
 	}
 
