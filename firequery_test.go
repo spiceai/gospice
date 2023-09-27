@@ -3,6 +3,7 @@ package gospice
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -14,7 +15,14 @@ func TestFireQuery(t *testing.T) {
 	spice := NewSpiceClient()
 	defer spice.Close()
 
-	if err := spice.Init(TEST_API_KEY); err != nil {
+	var ApiKey string
+	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
+		ApiKey = v
+	} else {
+		ApiKey = TEST_API_KEY
+	}
+
+	if err := spice.Init(ApiKey); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 	}
 

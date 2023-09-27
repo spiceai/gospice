@@ -18,6 +18,8 @@ const (
 	MAX_MESSAGE_SIZE_BYTES = 100 * 1024 * 1024
 )
 
+var defaultConfig = LoadConfig()
+
 // SpiceClient is a client for Spice.xyz - Data and AI infrastructure for web3
 // https://spice.xyz
 // For documentation visit https://docs.spice.xyz/sdks/go-sdk
@@ -26,6 +28,7 @@ type SpiceClient struct {
 	apiKey           string
 	flightAddress    string
 	firecacheAddress string
+	baseHttpUrl      string
 
 	flightClient    flight.Client
 	firecacheClient flight.Client
@@ -34,13 +37,14 @@ type SpiceClient struct {
 
 // NewSpiceClient creates a new SpiceClient
 func NewSpiceClient() *SpiceClient {
-	return NewSpiceClientWithAddress("flight.spiceai.io:443", "firecache.spiceai.io:443")
+	return NewSpiceClientWithAddress(defaultConfig.FlightUrl, defaultConfig.FirecacheUrl)
 }
 
 func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *SpiceClient {
 	return &SpiceClient{
 		flightAddress:    flightAddress,
 		firecacheAddress: firecacheAddress,
+		baseHttpUrl:      defaultConfig.HttpUrl,
 		httpClient: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 10,
@@ -98,7 +102,7 @@ func (c *SpiceClient) Close() error {
 
 func query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
 	if client == nil {
-		return nil, fmt.Errorf("Flight Client is not initialized")
+		return nil, fmt.Errorf("flight client is not initialized")
 	}
 
 	authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
