@@ -9,11 +9,6 @@ import (
 	"time"
 )
 
-type Quote struct {
-	Pair   string  `json:"pair"`
-	Prices []Price `json:"prices"`
-}
-
 type Price struct {
 	Timestamp string  `json:"timestamp"`
 	Price     float64 `json:"price"`
@@ -21,6 +16,13 @@ type Price struct {
 	Low       float64 `json:"low"`
 	Open      float64 `json:"open"`
 	Close     float64 `json:"close"`
+}
+
+type Quote struct {
+	Prices    map[string]string `mapstructure:"prices,omitempty" json:"prices,omitempty"`
+	MinPrice  string            `mapstructure:"minPrice,omitempty" json:"minPrice,omitempty"`
+	MaxPrice  string            `mapstructure:"maxPrice,omitempty" json:"maxPrice,omitempty"`
+	MeanPrice string            `mapstructure:"avePrice,omitempty" json:"avePrice,omitempty"`
 }
 
 type QuoteParams struct {
@@ -109,11 +111,11 @@ func (c *SpiceClient) GetHistoricalPrices(ctx context.Context, pairs []string, p
 		return nil, fmt.Errorf("GET %s failed with status %d", url, resp.StatusCode)
 	}
 
-	var quote Quote
-	err = json.NewDecoder(resp.Body).Decode(&quote)
+	var quotes map[string][]Price
+	err = json.NewDecoder(resp.Body).Decode(&quotes)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding response: %w", err)
 	}
 
-	return &quote, nil
+	return quotes, nil
 }
