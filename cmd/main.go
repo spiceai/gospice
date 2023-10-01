@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spiceai/gospice/v2"
+	"github.com/spiceai/gospice/v3"
 )
 
 func main() {
