@@ -34,7 +34,7 @@ type QuoteParams struct {
 func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) (map[string]Quote, error) {
 	urlBuilder := strings.Builder{}
 	urlBuilder.WriteString(c.baseHttpUrl)
-	urlBuilder.WriteString("/v1/prices/latest")
+	urlBuilder.WriteString("/v1/prices")
 	if len(pairs) > 0 {
 		pairsStr := strings.Join(pairs, ",")
 		urlBuilder.WriteString(fmt.Sprintf("?pair=%s", pairsStr))
@@ -72,7 +72,7 @@ func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) (map[
 func (c *SpiceClient) GetPrices(ctx context.Context, pairs []string, params *QuoteParams) (map[string][]Price, error) {
 	urlBuilder := strings.Builder{}
 	urlBuilder.WriteString(c.baseHttpUrl)
-	urlBuilder.WriteString("/v1/prices")
+	urlBuilder.WriteString("/v1/prices/historical")
 	if len(pairs) > 0 {
 		pairsStr := strings.Join(pairs, ",")
 		urlBuilder.WriteString(fmt.Sprintf("?pair=%s", pairsStr))
