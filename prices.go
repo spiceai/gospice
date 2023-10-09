@@ -37,7 +37,7 @@ func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) (map[
 	urlBuilder.WriteString("/v1/prices")
 	if len(pairs) > 0 {
 		pairsStr := strings.Join(pairs, ",")
-		urlBuilder.WriteString(fmt.Sprintf("?pair=%s", pairsStr))
+		urlBuilder.WriteString(fmt.Sprintf("?pairs=%s", pairsStr))
 	}
 
 	url := urlBuilder.String()
@@ -75,7 +75,7 @@ func (c *SpiceClient) GetPrices(ctx context.Context, pairs []string, params *Quo
 	urlBuilder.WriteString("/v1/prices/historical")
 	if len(pairs) > 0 {
 		pairsStr := strings.Join(pairs, ",")
-		urlBuilder.WriteString(fmt.Sprintf("?pair=%s", pairsStr))
+		urlBuilder.WriteString(fmt.Sprintf("?pairs=%s", pairsStr))
 	} else {
 		return map[string][]Price{}, nil
 	}
