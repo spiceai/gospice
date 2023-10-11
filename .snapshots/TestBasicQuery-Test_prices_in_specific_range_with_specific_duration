@@ -1,5 +1,6 @@
-(map[string][]gospice.Price) (len=1) {
-  (string) (len=7) "ETH-USD": ([]gospice.Price) (len=1) {
+(*gospice.Quote)({
+  Pair: (string) (len=7) "ETH-USD",
+  Prices: ([]gospice.Price) (len=1) {
     (gospice.Price) {
       Timestamp: (string) (len=20) "2023-01-02T00:00:00Z",
       Price: (float64) 1192.1,
@@ -9,4 +10,4 @@
       Close: (float64) 1192.1
     }
   }
-}
+})
