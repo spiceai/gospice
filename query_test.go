@@ -131,7 +131,7 @@ func TestBasicQuery(t *testing.T) {
 
 	// Test Prices
 	t.Run("Test prices latest", func(t *testing.T) {
-		quote, err := spice.GetPrices(context.Background(), "ETH-USD", nil)
+		quote, err := spice.GetPrices(context.Background(), "eth-usd", nil)
 		if err != nil {
 			t.Fatalf("error querying: %s", err.Error())
 		}
@@ -159,7 +159,7 @@ func TestBasicQuery(t *testing.T) {
 			EndTime:   time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC),
 		}
 
-		quote, err := spice.GetPrices(context.Background(), "ETH-USD", params)
+		quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
 		if err != nil {
 			t.Fatalf("error querying: %s", err.Error())
 		}
@@ -174,7 +174,7 @@ func TestBasicQuery(t *testing.T) {
 			Granularity: "24h",
 		}
 
-		quote, err := spice.GetPrices(context.Background(), "ETH-USD", params)
+		quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
 		if err != nil {
 			t.Fatalf("error querying: %s", err.Error())
 		}
