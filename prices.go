@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+type Quote struct {
+	Pair   string  `json:"pair"`
+	Prices []Price `json:"prices"`
+}
+
 type Price struct {
 	Timestamp string  `json:"timestamp"`
 	Price     float64 `json:"price"`
@@ -18,67 +23,15 @@ type Price struct {
 	Close     float64 `json:"close"`
 }
 
-type Quote struct {
-	Prices    map[string]string `mapstructure:"prices,omitempty" json:"prices,omitempty"`
-	MinPrice  string            `mapstructure:"minPrice,omitempty" json:"minPrice,omitempty"`
-	MaxPrice  string            `mapstructure:"maxPrice,omitempty" json:"maxPrice,omitempty"`
-	MeanPrice string            `mapstructure:"avePrice,omitempty" json:"avePrice,omitempty"`
-}
-
 type QuoteParams struct {
 	StartTime   time.Time
 	EndTime     time.Time
 	Granularity string
 }
 
-func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) (map[string]Quote, error) {
+func (c *SpiceClient) GetPrices(ctx context.Context, pair string, params *QuoteParams) (*Quote, error) {
 	urlBuilder := strings.Builder{}
-	urlBuilder.WriteString(c.baseHttpUrl)
-	urlBuilder.WriteString("/v1/prices/latest")
-	if len(pairs) > 0 {
-		pairsStr := strings.Join(pairs, ",")
-		urlBuilder.WriteString(fmt.Sprintf("?pair=%s", pairsStr))
-	}
-
-	url := urlBuilder.String()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
-	}
-
-	req.Header.Set("X-API-Key", c.apiKey)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "gospice 0.1")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error executing request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s failed with status %d", url, resp.StatusCode)
-	}
-
-	// Try to decode into a slice of Quote objects
-	var quotes map[string]Quote
-	if err = json.NewDecoder(resp.Body).Decode(&quotes); err != nil {
-		return nil, fmt.Errorf("error decoding response from: %w", err)
-	}
-
-	return quotes, nil
-}
-
-func (c *SpiceClient) GetPrices(ctx context.Context, pairs []string, params *QuoteParams) (map[string][]Price, error) {
-	urlBuilder := strings.Builder{}
-	urlBuilder.WriteString(c.baseHttpUrl)
-	urlBuilder.WriteString("/v1/prices")
-	if len(pairs) > 0 {
-		pairsStr := strings.Join(pairs, ",")
-		urlBuilder.WriteString(fmt.Sprintf("?pair=%s", pairsStr))
-	} else {
-		return map[string][]Price{}, nil
-	}
+	urlBuilder.WriteString(fmt.Sprintf("https://data.spiceai.io/v0.1/prices/%s?preview=true", pair))
 	if params != nil {
 		if !params.StartTime.IsZero() {
 			urlBuilder.WriteString(fmt.Sprintf("&start=%d", params.StartTime.Unix()))
@@ -111,11 +64,11 @@ func (c *SpiceClient) GetPrices(ctx context.Context, pairs []string, params *Quo
 		return nil, fmt.Errorf("GET %s failed with status %d", url, resp.StatusCode)
 	}
 
-	var quotes map[string][]Price
-	err = json.NewDecoder(resp.Body).Decode(&quotes)
+	var quote Quote
+	err = json.NewDecoder(resp.Body).Decode(&quote)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding response: %w", err)
 	}
 
-	return quotes, nil
+	return &quote, nil
 }
