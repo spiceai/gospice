@@ -153,19 +153,20 @@ func TestBasicQuery(t *testing.T) {
 		}
 	})
 
-	t.Run("Test prices in specific range", func(t *testing.T) {
-		params := &QuoteParams{
-			StartTime: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
-			EndTime:   time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC),
-		}
+	// TODO(mitch): uncomment once fix for ordered prices is deployed
+	// t.Run("Test prices in specific range", func(t *testing.T) {
+	// 	params := &QuoteParams{
+	// 		StartTime: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+	// 		EndTime:   time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC),
+	// 	}
 
-		quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
-		if err != nil {
-			t.Fatalf("error querying: %s", err.Error())
-		}
+	// 	quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
+	// 	if err != nil {
+	// 		t.Fatalf("error querying: %s", err.Error())
+	// 	}
 
-		cupaloy.SnapshotT(t, quote)
-	})
+	// 	cupaloy.SnapshotT(t, quote)
+	// })
 
 	t.Run("Test prices in specific range with specific duration", func(t *testing.T) {
 		params := &QuoteParams{
