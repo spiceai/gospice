@@ -27,9 +27,8 @@ type SpiceClient struct {
 	flightAddress    string
 	firecacheAddress string
 
-	flightClient    flight.Client
-	firecacheClient flight.Client
-	httpClient      http.Client
+	systemCertPool *x509.CertPool
+	httpClient     http.Client
 }
 
 // NewSpiceClient creates a new SpiceClient
@@ -60,46 +59,29 @@ func (c *SpiceClient) Init(apiKey string) error {
 		return fmt.Errorf("apiKey is invalid")
 	}
 
-	systemCertPool, err := x509.SystemCertPool()
+	var err error
+	c.systemCertPool, err = x509.SystemCertPool()
 	if err != nil {
 		return fmt.Errorf("error getting system cert pool: %w", err)
 	}
 
-	flightClient, err := createClient(c.flightAddress, systemCertPool)
-	if err != nil {
-		return fmt.Errorf("error creating Spice Flight client: %w", err)
-	}
-
-	firecacheClient, err := createClient(c.firecacheAddress, systemCertPool)
-	if err != nil {
-		return fmt.Errorf("error creating Spice Firecache client: %w", err)
-	}
-
 	c.appId = apiKeyParts[0]
 	c.apiKey = apiKey
-	c.flightClient = flightClient
-	c.firecacheClient = firecacheClient
-
 	return nil
 }
 
 // Close closes the SpiceClient and cleans up resources
 func (c *SpiceClient) Close() error {
-	if c.flightClient != nil {
-		return c.flightClient.Close()
-	}
-	if c.firecacheClient != nil {
-		return c.firecacheClient.Close()
-	}
 	c.httpClient.CloseIdleConnections()
-
 	return nil
 }
 
-func query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
-	if client == nil {
-		return nil, fmt.Errorf("Flight Client is not initialized")
+func (c *SpiceClient) query(ctx context.Context, address string, appId string, apiKey string, sql string) (array.RecordReader, error) {
+	client, err := createClient(address, c.systemCertPool)
+	if err != nil {
+		return nil, fmt.Errorf("error creating Spice Flight client: %w", err)
 	}
+	defer client.Close()
 
 	authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
 	if err != nil {
