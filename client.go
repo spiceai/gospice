@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/apache/arrow/go/v13/arrow/array"
 	"github.com/apache/arrow/go/v13/arrow/flight"
@@ -30,6 +31,7 @@ type SpiceClient struct {
 	flightClient    flight.Client
 	firecacheClient flight.Client
 	httpClient      http.Client
+	maxRetries      uint
 }
 
 // NewSpiceClient creates a new SpiceClient
@@ -47,6 +49,7 @@ func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *S
 				DisableCompression:  false,
 			},
 		},
+		maxRetries: 3,
 	}
 }
 
@@ -65,12 +68,12 @@ func (c *SpiceClient) Init(apiKey string) error {
 		return fmt.Errorf("error getting system cert pool: %w", err)
 	}
 
-	flightClient, err := createClient(c.flightAddress, systemCertPool)
+	flightClient, err := c.createClient(c.flightAddress, systemCertPool)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Flight client: %w", err)
 	}
 
-	firecacheClient, err := createClient(c.firecacheAddress, systemCertPool)
+	firecacheClient, err := c.createClient(c.firecacheAddress, systemCertPool)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Firecache client: %w", err)
 	}
@@ -81,6 +84,15 @@ func (c *SpiceClient) Init(apiKey string) error {
 	c.firecacheClient = firecacheClient
 
 	return nil
+}
+
+// Sets the maximum number of times to retry Query and FireQuery calls.
+// The default is 3. Setting to 1 will disable retries.
+func (c *SpiceClient) SetMaxRetries(maxRetries uint) {
+	if maxRetries < 1 {
+		maxRetries = 1
+	}
+	c.maxRetries = maxRetries
 }
 
 // Close closes the SpiceClient and cleans up resources
@@ -96,14 +108,22 @@ func (c *SpiceClient) Close() error {
 	return nil
 }
 
-func query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
+func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
 	if client == nil {
 		return nil, fmt.Errorf("Flight Client is not initialized")
 	}
 
-	authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
+	var authContext context.Context
+	var err error
+	for i := uint(0); i < c.maxRetries; i++ {
+		authContext, err = client.AuthenticateBasicToken(ctx, appId, apiKey)
+		if err == nil {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("error authenticating with Spice.xyz: %w", err)
+		return nil, fmt.Errorf("error authenticating with Spice.xyz: %s", err)
 	}
 
 	fd := &flight.FlightDescriptor{
@@ -112,17 +132,32 @@ func query(ctx context.Context, client flight.Client, appId string, apiKey strin
 	}
 
 	var info *flight.FlightInfo
-	info, err = client.GetFlightInfo(authContext, fd)
+	for i := uint(0); i < c.maxRetries; i++ {
+		info, err = client.GetFlightInfo(authContext, fd)
+		if err == nil {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	stream, err := client.DoGet(authContext, info.Endpoint[0].Ticket)
-	if err != nil {
-		return nil, err
-	}
+	var stream flight.FlightService_DoGetClient
+	var rdr *flight.Reader
+	for i := uint(0); i < c.maxRetries; i++ {
+		stream, err = client.DoGet(authContext, info.Endpoint[0].Ticket)
+		if err != nil {
+			time.Sleep(250 * time.Millisecond)
+			continue
+		}
 
-	rdr, err := flight.NewRecordReader(stream)
+		rdr, err = flight.NewRecordReader(stream)
+		if err == nil {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -130,10 +165,27 @@ func query(ctx context.Context, client flight.Client, appId string, apiKey strin
 	return rdr, err
 }
 
-func createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
-	grpcDialOpts := []grpc.DialOption{grpc.WithDefaultCallOptions(
-		grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
-		grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES))}
+func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
+	retryPolicy := fmt.Sprintf(`{
+		"methodConfig": [{
+	        "name": [{"service": "arrow.flight.protocol.FlightService"}],
+	        "waitForReady": true,
+	        "retryPolicy": {
+	            "MaxAttempts": %d,
+	            "InitialBackoff": "0.1s",
+	            "MaxBackoff": "0.225s",
+	            "BackoffMultiplier": 1.5,
+				"RetryableStatusCodes": [ "UNAVAILABLE", "UNKNOWN", "INTERNAL" ]
+	        }
+	    }]
+	}`, c.maxRetries)
+	grpcDialOpts := []grpc.DialOption{
+		grpc.WithDefaultServiceConfig(retryPolicy),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
+			grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES),
+		),
+	}
 
 	if strings.HasPrefix(address, "grpc://") {
 		address = strings.TrimPrefix(address, "grpc://")
