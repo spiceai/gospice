@@ -68,12 +68,12 @@ func (c *SpiceClient) Init(apiKey string) error {
 		return fmt.Errorf("error getting system cert pool: %w", err)
 	}
 
-	flightClient, err := c.createClient(c.flightAddress, systemCertPool)
+	flightClient, err := createClient(c.flightAddress, systemCertPool)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Flight client: %w", err)
 	}
 
-	firecacheClient, err := c.createClient(c.firecacheAddress, systemCertPool)
+	firecacheClient, err := createClient(c.firecacheAddress, systemCertPool)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Firecache client: %w", err)
 	}
@@ -165,8 +165,10 @@ func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId str
 	return rdr, err
 }
 
-func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
-	grpcDialOpts := []grpc.DialOption{grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES), grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES))}
+func createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
+	grpcDialOpts := []grpc.DialOption{grpc.WithDefaultCallOptions(
+		grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
+		grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES))}
 
 	if strings.HasPrefix(address, "grpc://") {
 		address = strings.TrimPrefix(address, "grpc://")
