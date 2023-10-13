@@ -166,26 +166,7 @@ func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId str
 }
 
 func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
-	retryPolicy := fmt.Sprintf(`{
-		"methodConfig": [{
-	        "name": [{"service": "arrow.flight.protocol.FlightService"}],
-	        "waitForReady": true,
-	        "retryPolicy": {
-	            "MaxAttempts": %d,
-	            "InitialBackoff": "0.1s",
-	            "MaxBackoff": "0.225s",
-	            "BackoffMultiplier": 1.5,
-				"RetryableStatusCodes": [ "UNAVAILABLE", "UNKNOWN", "INTERNAL" ]
-	        }
-	    }]
-	}`, c.maxRetries)
-	grpcDialOpts := []grpc.DialOption{
-		grpc.WithDefaultServiceConfig(retryPolicy),
-		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
-			grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES),
-		),
-	}
+	grpcDialOpts := []grpc.DialOption{grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES), grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES))}
 
 	if strings.HasPrefix(address, "grpc://") {
 		address = strings.TrimPrefix(address, "grpc://")
