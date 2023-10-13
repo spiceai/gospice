@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/apache/arrow/go/v13/arrow/array"
 	"github.com/apache/arrow/go/v13/arrow/flight"
@@ -113,15 +112,7 @@ func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId str
 		return nil, fmt.Errorf("Flight Client is not initialized")
 	}
 
-	var authContext context.Context
-	var err error
-	for i := uint(0); i < c.maxRetries; i++ {
-		authContext, err = client.AuthenticateBasicToken(ctx, appId, apiKey)
-		if err == nil {
-			break
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
+	authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
 	if err != nil {
 		return nil, fmt.Errorf("error authenticating with Spice.xyz: %s", err)
 	}
@@ -131,33 +122,17 @@ func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId str
 		Cmd:  []byte(sql),
 	}
 
-	var info *flight.FlightInfo
-	for i := uint(0); i < c.maxRetries; i++ {
-		info, err = client.GetFlightInfo(authContext, fd)
-		if err == nil {
-			break
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
+	info, err := client.GetFlightInfo(authContext, fd)
 	if err != nil {
 		return nil, err
 	}
 
-	var stream flight.FlightService_DoGetClient
-	var rdr *flight.Reader
-	for i := uint(0); i < c.maxRetries; i++ {
-		stream, err = client.DoGet(authContext, info.Endpoint[0].Ticket)
-		if err != nil {
-			time.Sleep(250 * time.Millisecond)
-			continue
-		}
-
-		rdr, err = flight.NewRecordReader(stream)
-		if err == nil {
-			break
-		}
-		time.Sleep(250 * time.Millisecond)
+	stream, err := client.DoGet(authContext, info.Endpoint[0].Ticket)
+	if err != nil {
+		return nil, err
 	}
+
+	rdr, err := flight.NewRecordReader(stream)
 	if err != nil {
 		return nil, err
 	}
