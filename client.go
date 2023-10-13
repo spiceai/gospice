@@ -107,14 +107,14 @@ func (c *SpiceClient) Close() error {
 	return nil
 }
 
-func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
+func query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
 	if client == nil {
 		return nil, fmt.Errorf("Flight Client is not initialized")
 	}
 
 	authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
 	if err != nil {
-		return nil, fmt.Errorf("error authenticating with Spice.xyz: %s", err)
+		return nil, fmt.Errorf("error authenticating with Spice.xyz: %w", err)
 	}
 
 	fd := &flight.FlightDescriptor{
@@ -122,7 +122,8 @@ func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId str
 		Cmd:  []byte(sql),
 	}
 
-	info, err := client.GetFlightInfo(authContext, fd)
+	var info *flight.FlightInfo
+	info, err = client.GetFlightInfo(authContext, fd)
 	if err != nil {
 		return nil, err
 	}
