@@ -44,7 +44,7 @@ func NewSpiceClient() *SpiceClient {
 }
 
 func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *SpiceClient {
-	return &SpiceClient{
+	spiceClient := &SpiceClient{
 		flightAddress:    flightAddress,
 		firecacheAddress: firecacheAddress,
 		httpClient: http.Client{
@@ -53,9 +53,10 @@ func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *S
 				DisableCompression:  false,
 			},
 		},
-		backoffPolicy: defaultBackoffPolicy(),
 		maxRetries: 3,
 	}
+	spiceClient.backoffPolicy = spiceClient.defaultBackoffPolicy()
+	return spiceClient
 }
 
 // Init initializes the SpiceClient
@@ -224,13 +225,16 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 	return client, nil
 }
 
-func defaultBackoffPolicy() backoff.BackOff {
+func (c *SpiceClient) defaultBackoffPolicy() backoff.BackOff {
+	initialInterval := 250 * time.Millisecond
+	maxInterval := initialInterval * time.Duration(float32(c.maxRetries)*backoff.DefaultMultiplier)
+	maxElapsedTime := maxInterval * time.Duration(c.maxRetries)
 	b := &backoff.ExponentialBackOff{
-		InitialInterval:     250 * time.Millisecond,
+		InitialInterval:     initialInterval,
 		RandomizationFactor: backoff.DefaultRandomizationFactor, // 0.5
 		Multiplier:          backoff.DefaultMultiplier,          // 1.5
-		MaxInterval:         5 * time.Second,
-		MaxElapsedTime:      15 * time.Second,
+		MaxInterval:         maxInterval,
+		MaxElapsedTime:      maxElapsedTime,
 		Stop:                backoff.Stop,
 		Clock:               backoff.SystemClock,
 	}
