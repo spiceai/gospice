@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"log"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -115,7 +117,7 @@ func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId str
 	var rdr array.RecordReader
 	err := backoff.Retry(func() error {
 		var err error
-		rdr, err = c.query(ctx, client, appId, apiKey, sql)
+		rdr, err = c.queryInternal(ctx, client, appId, apiKey, sql)
 		if err != nil {
 			st, ok := status.FromError(err)
 			if ok {
@@ -218,8 +220,10 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 
 func (c *SpiceClient) getBackoffPolicy() backoff.BackOff {
 	initialInterval := 250 * time.Millisecond
-	maxInterval := initialInterval * time.Duration(float32(c.maxRetries)*backoff.DefaultMultiplier)
+	maxInterval := initialInterval * time.Duration(math.Ceil(float64(c.maxRetries)*backoff.DefaultMultiplier))
+	log.Println(maxInterval)
 	maxElapsedTime := maxInterval * time.Duration(c.maxRetries)
+	log.Println(maxElapsedTime)
 	b := &backoff.ExponentialBackOff{
 		InitialInterval:     initialInterval,
 		RandomizationFactor: backoff.DefaultRandomizationFactor, // 0.5
