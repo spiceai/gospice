@@ -55,7 +55,7 @@ func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *S
 		},
 		maxRetries: 3,
 	}
-	spiceClient.backoffPolicy = spiceClient.defaultBackoffPolicy()
+	spiceClient.backoffPolicy = spiceClient.getBackoffPolicy()
 	return spiceClient
 }
 
@@ -90,14 +90,6 @@ func (c *SpiceClient) Init(apiKey string) error {
 	c.firecacheClient = firecacheClient
 
 	return nil
-}
-
-// Set a custom backoff policy to use when retrying requests to Spice.ai
-// The default is an exponential backoff policy with an initial interval of 250ms,
-// a max interval of interval * maxRetries * backoffMultiplier, and a 
-// max elapsed time of maxInterval * maxRetries.
-func (c *SpiceClient) SetBackoffPolicy(backoffPolicy backoff.BackOff) {
-	c.backoffPolicy = backoffPolicy
 }
 
 // Sets the maximum number of times to retry Query and FireQuery calls.
@@ -144,7 +136,7 @@ func (c *SpiceClient) queryWithRetry(ctx context.Context, client flight.Client, 
 			return backoff.Permanent(err)
 		}
 		return nil
-	}, c.backoffPolicy)
+	}, backoff.WithMaxRetries(c.backoffPolicy, uint64(c.maxRetries)-1))
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +219,7 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 	return client, nil
 }
 
-func (c *SpiceClient) defaultBackoffPolicy() backoff.BackOff {
+func (c *SpiceClient) getBackoffPolicy() backoff.BackOff {
 	initialInterval := 250 * time.Millisecond
 	maxInterval := initialInterval * time.Duration(float32(c.maxRetries)*backoff.DefaultMultiplier)
 	maxElapsedTime := maxInterval * time.Duration(c.maxRetries)
