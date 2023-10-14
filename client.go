@@ -4,14 +4,19 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/apache/arrow/go/v13/arrow/array"
 	"github.com/apache/arrow/go/v13/arrow/flight"
+	"github.com/cenkalti/backoff/v4"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -30,6 +35,7 @@ type SpiceClient struct {
 	flightClient    flight.Client
 	firecacheClient flight.Client
 	httpClient      http.Client
+	backoffPolicy   backoff.BackOff
 	maxRetries      uint
 }
 
@@ -39,7 +45,7 @@ func NewSpiceClient() *SpiceClient {
 }
 
 func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *SpiceClient {
-	return &SpiceClient{
+	spiceClient := &SpiceClient{
 		flightAddress:    flightAddress,
 		firecacheAddress: firecacheAddress,
 		httpClient: http.Client{
@@ -50,6 +56,8 @@ func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *S
 		},
 		maxRetries: 3,
 	}
+	spiceClient.backoffPolicy = spiceClient.getBackoffPolicy()
+	return spiceClient
 }
 
 // Init initializes the SpiceClient
@@ -86,11 +94,8 @@ func (c *SpiceClient) Init(apiKey string) error {
 }
 
 // Sets the maximum number of times to retry Query and FireQuery calls.
-// The default is 3. Setting to 1 will disable retries.
+// The default is 3. Setting to 0 will disable retries.
 func (c *SpiceClient) SetMaxRetries(maxRetries uint) {
-	if maxRetries < 1 {
-		maxRetries = 1
-	}
 	c.maxRetries = maxRetries
 }
 
@@ -107,14 +112,44 @@ func (c *SpiceClient) Close() error {
 	return nil
 }
 
-func query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
+func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
+	var rdr array.RecordReader
+	err := backoff.Retry(func() error {
+		var err error
+		rdr, err = c.queryInternal(ctx, client, appId, apiKey, sql)
+		if err != nil {
+			st, ok := status.FromError(err)
+			if ok {
+				switch st.Code() {
+				case codes.Canceled, codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted, codes.Aborted, codes.Internal:
+					return err
+				}
+				if strings.Contains(err.Error(), "malformed header: missing HTTP content-type") {
+					return err
+				}
+				if err.Error() == "rpc error: code = Unknown desc = " {
+					return err
+				}
+			}
+			return backoff.Permanent(err)
+		}
+		return nil
+	}, backoff.WithMaxRetries(c.backoffPolicy, uint64(c.maxRetries)))
+	if err != nil {
+		return nil, err
+	}
+
+	return rdr, nil
+}
+
+func (c *SpiceClient) queryInternal(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
 	if client == nil {
 		return nil, fmt.Errorf("Flight Client is not initialized")
 	}
 
 	authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
 	if err != nil {
-		return nil, fmt.Errorf("error authenticating with Spice.xyz: %w", err)
+		return nil, err
 	}
 
 	fd := &flight.FlightDescriptor{
@@ -122,8 +157,7 @@ func query(ctx context.Context, client flight.Client, appId string, apiKey strin
 		Cmd:  []byte(sql),
 	}
 
-	var info *flight.FlightInfo
-	info, err = client.GetFlightInfo(authContext, fd)
+	info, err := client.GetFlightInfo(authContext, fd)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +172,7 @@ func query(ctx context.Context, client flight.Client, appId string, apiKey strin
 		return nil, err
 	}
 
-	return rdr, err
+	return rdr, nil
 }
 
 func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
@@ -154,7 +188,7 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 				"RetryableStatusCodes": [ "UNAVAILABLE", "UNKNOWN", "INTERNAL" ]
 	        }
 	    }]
-	}`, c.maxRetries)
+	}`, c.maxRetries+1)
 	grpcDialOpts := []grpc.DialOption{
 		grpc.WithDefaultServiceConfig(retryPolicy),
 		grpc.WithDefaultCallOptions(
@@ -181,4 +215,21 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 	}
 
 	return client, nil
+}
+
+func (c *SpiceClient) getBackoffPolicy() backoff.BackOff {
+	initialInterval := 250 * time.Millisecond
+	maxInterval := initialInterval * time.Duration(math.Ceil(float64(c.maxRetries)*backoff.DefaultMultiplier))
+	maxElapsedTime := maxInterval * time.Duration(c.maxRetries)
+	b := &backoff.ExponentialBackOff{
+		InitialInterval:     initialInterval,
+		RandomizationFactor: backoff.DefaultRandomizationFactor, // 0.5
+		Multiplier:          backoff.DefaultMultiplier,          // 1.5
+		MaxInterval:         maxInterval,
+		MaxElapsedTime:      maxElapsedTime,
+		Stop:                backoff.Stop,
+		Clock:               backoff.SystemClock,
+	}
+	b.Reset()
+	return b
 }
