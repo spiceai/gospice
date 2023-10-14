@@ -93,7 +93,9 @@ func (c *SpiceClient) Init(apiKey string) error {
 }
 
 // Set a custom backoff policy to use when retrying requests to Spice.ai
-// The default is an exponential backoff policy with a max interval of 5 seconds and max elapsed time of 15 seconds.
+// The default is an exponential backoff policy with an initial interval of 250ms,
+// a max interval of interval * maxRetries * backoffMultiplier, and a 
+// max elapsed time of maxInterval * maxRetries.
 func (c *SpiceClient) SetBackoffPolicy(backoffPolicy backoff.BackOff) {
 	c.backoffPolicy = backoffPolicy
 }
