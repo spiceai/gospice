@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
-	"log"
 	"math"
 	"net/http"
 	"strings"
@@ -221,9 +220,7 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 func (c *SpiceClient) getBackoffPolicy() backoff.BackOff {
 	initialInterval := 250 * time.Millisecond
 	maxInterval := initialInterval * time.Duration(math.Ceil(float64(c.maxRetries)*backoff.DefaultMultiplier))
-	log.Println(maxInterval)
 	maxElapsedTime := maxInterval * time.Duration(c.maxRetries)
-	log.Println(maxElapsedTime)
 	b := &backoff.ExponentialBackOff{
 		InitialInterval:     initialInterval,
 		RandomizationFactor: backoff.DefaultRandomizationFactor, // 0.5
