@@ -93,11 +93,8 @@ func (c *SpiceClient) Init(apiKey string) error {
 }
 
 // Sets the maximum number of times to retry Query and FireQuery calls.
-// The default is 3. Setting to 1 will disable retries.
+// The default is 3. Setting to 0 will disable retries.
 func (c *SpiceClient) SetMaxRetries(maxRetries uint) {
-	if maxRetries < 1 {
-		maxRetries = 1
-	}
 	c.maxRetries = maxRetries
 }
 
@@ -136,7 +133,7 @@ func (c *SpiceClient) queryWithRetry(ctx context.Context, client flight.Client, 
 			return backoff.Permanent(err)
 		}
 		return nil
-	}, backoff.WithMaxRetries(c.backoffPolicy, uint64(c.maxRetries)-1))
+	}, backoff.WithMaxRetries(c.backoffPolicy, uint64(c.maxRetries)))
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +187,7 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 				"RetryableStatusCodes": [ "UNAVAILABLE", "UNKNOWN", "INTERNAL" ]
 	        }
 	    }]
-	}`, c.maxRetries)
+	}`, c.maxRetries+1)
 	grpcDialOpts := []grpc.DialOption{
 		grpc.WithDefaultServiceConfig(retryPolicy),
 		grpc.WithDefaultCallOptions(
