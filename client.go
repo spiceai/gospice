@@ -111,7 +111,7 @@ func (c *SpiceClient) Close() error {
 	return nil
 }
 
-func (c *SpiceClient) queryWithRetry(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
+func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
 	var rdr array.RecordReader
 	err := backoff.Retry(func() error {
 		var err error
@@ -141,7 +141,7 @@ func (c *SpiceClient) queryWithRetry(ctx context.Context, client flight.Client, 
 	return rdr, nil
 }
 
-func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
+func (c *SpiceClient) queryInternal(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
 	if client == nil {
 		return nil, fmt.Errorf("Flight Client is not initialized")
 	}
