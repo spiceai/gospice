@@ -35,6 +35,7 @@ type SpiceClient struct {
 	firecacheClient flight.Client
 	httpClient      http.Client
 	backoffPolicy   backoff.BackOff
+	maxRetries      uint
 }
 
 // NewSpiceClient creates a new SpiceClient
@@ -53,6 +54,7 @@ func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *S
 			},
 		},
 		backoffPolicy: defaultBackoffPolicy(),
+		maxRetries: 3,
 	}
 }
 
@@ -71,12 +73,12 @@ func (c *SpiceClient) Init(apiKey string) error {
 		return fmt.Errorf("error getting system cert pool: %w", err)
 	}
 
-	flightClient, err := createClient(c.flightAddress, systemCertPool)
+	flightClient, err := c.createClient(c.flightAddress, systemCertPool)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Flight client: %w", err)
 	}
 
-	firecacheClient, err := createClient(c.firecacheAddress, systemCertPool)
+	firecacheClient, err := c.createClient(c.firecacheAddress, systemCertPool)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Firecache client: %w", err)
 	}
@@ -93,6 +95,15 @@ func (c *SpiceClient) Init(apiKey string) error {
 // The default is an exponential backoff policy with a max interval of 5 seconds and max elapsed time of 15 seconds.
 func (c *SpiceClient) SetBackoffPolicy(backoffPolicy backoff.BackOff) {
 	c.backoffPolicy = backoffPolicy
+}
+
+// Sets the maximum number of times to retry Query and FireQuery calls.
+// The default is 3. Setting to 1 will disable retries.
+func (c *SpiceClient) SetMaxRetries(maxRetries uint) {
+	if maxRetries < 1 {
+		maxRetries = 1
+	}
+	c.maxRetries = maxRetries
 }
 
 // Close closes the SpiceClient and cleans up resources
@@ -171,10 +182,27 @@ func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId str
 	return rdr, nil
 }
 
-func createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
-	grpcDialOpts := []grpc.DialOption{grpc.WithDefaultCallOptions(
-		grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
-		grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES))}
+func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
+	retryPolicy := fmt.Sprintf(`{
+		"methodConfig": [{
+	        "name": [{"service": "arrow.flight.protocol.FlightService"}],
+	        "waitForReady": true,
+	        "retryPolicy": {
+	            "MaxAttempts": %d,
+	            "InitialBackoff": "0.1s",
+	            "MaxBackoff": "0.225s",
+	            "BackoffMultiplier": 1.5,
+				"RetryableStatusCodes": [ "UNAVAILABLE", "UNKNOWN", "INTERNAL" ]
+	        }
+	    }]
+	}`, c.maxRetries)
+	grpcDialOpts := []grpc.DialOption{
+		grpc.WithDefaultServiceConfig(retryPolicy),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
+			grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES),
+		),
+	}
 
 	if strings.HasPrefix(address, "grpc://") {
 		address = strings.TrimPrefix(address, "grpc://")
