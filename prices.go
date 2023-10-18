@@ -29,7 +29,7 @@ type QuoteParams struct {
 	Granularity string
 }
 
-func (c *SpiceClient) GetPrices(ctx context.Context, pair string, params *QuoteParams) (*Quote, error) {
+func (c *SpiceClient) GetPrices(ctx context.Context, pairs []string) (map[string]Quote, error) {
 	urlBuilder := strings.Builder{}
 	urlBuilder.WriteString(c.baseHttpUrl)
 	urlBuilder.WriteString("/v1/prices")
@@ -67,7 +67,7 @@ func (c *SpiceClient) GetPrices(ctx context.Context, pair string, params *QuoteP
 	return quotes, nil
 }
 
-func (c *SpiceClient) GetPrices(ctx context.Context, pairs []string, params *QuoteParams) (map[string][]Price, error) {
+func (c *SpiceClient) GetHistoricalPrices(ctx context.Context, pairs []string, params *QuoteParams) (map[string][]Price, error) {
 	urlBuilder := strings.Builder{}
 	urlBuilder.WriteString(c.baseHttpUrl)
 	urlBuilder.WriteString("/v1/prices/historical")
