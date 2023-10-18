@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
@@ -27,3 +28,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230920183334-c177e329c48b // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 )
+
+replace github.com/apache/arrow/go/v13 => github.com/spicehq/arrow/go/v13 v13.0.0-20231011105758-b46797bef61d

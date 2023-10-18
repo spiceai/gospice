@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+type Quote struct {
+	Pair   string  `json:"pair"`
+	Prices []Price `json:"prices"`
+}
+
 type Price struct {
 	Timestamp string  `json:"timestamp"`
 	Price     float64 `json:"price"`
@@ -18,20 +23,13 @@ type Price struct {
 	Close     float64 `json:"close"`
 }
 
-type Quote struct {
-	Prices    map[string]string `mapstructure:"prices,omitempty" json:"prices,omitempty"`
-	MinPrice  string            `mapstructure:"minPrice,omitempty" json:"minPrice,omitempty"`
-	MaxPrice  string            `mapstructure:"maxPrice,omitempty" json:"maxPrice,omitempty"`
-	MeanPrice string            `mapstructure:"avePrice,omitempty" json:"avePrice,omitempty"`
-}
-
 type QuoteParams struct {
 	StartTime   time.Time
 	EndTime     time.Time
 	Granularity string
 }
 
-func (c *SpiceClient) GetLatestPrices(ctx context.Context, pairs []string) (map[string]Quote, error) {
+func (c *SpiceClient) GetPrices(ctx context.Context, pair string, params *QuoteParams) (*Quote, error) {
 	urlBuilder := strings.Builder{}
 	urlBuilder.WriteString(c.baseHttpUrl)
 	urlBuilder.WriteString("/v1/prices")
@@ -111,11 +109,11 @@ func (c *SpiceClient) GetPrices(ctx context.Context, pairs []string, params *Quo
 		return nil, fmt.Errorf("GET %s failed with status %d", url, resp.StatusCode)
 	}
 
-	var quotes map[string][]Price
-	err = json.NewDecoder(resp.Body).Decode(&quotes)
+	var quote Quote
+	err = json.NewDecoder(resp.Body).Decode(&quote)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding response: %w", err)
 	}
 
-	return quotes, nil
+	return &quote, nil
 }
