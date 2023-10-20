@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	TEST_API_KEY = "323337|b42eceab2e7c4a60a04ad57bebea830d" // spice.xyz/spicehq/gospice-tests
+	TEST_API_KEY = "323337|b42eceab2e7c4a60a04ad57bebea830d" // spice.ai/spicehq/gospice-tests
 )
 
 // Execute a basic query and check for columns and rows

@@ -25,9 +25,9 @@ const (
 
 var defaultConfig = LoadConfig()
 
-// SpiceClient is a client for Spice.xyz - Data and AI infrastructure for web3
-// https://spice.xyz
-// For documentation visit https://docs.spice.xyz/sdks/go-sdk
+// SpiceClient is a client for Spice.ai - Data and AI infrastructure for web3
+// https://spice.ai
+// For documentation visit https://docs.spice.ai/sdks/go-sdk
 type SpiceClient struct {
 	appId            string
 	apiKey           string
