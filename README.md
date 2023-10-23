@@ -1,10 +1,10 @@
 # gospice
 
-Golang SDK for Spice.xyz
+Golang SDK for Spice.ai
 
 See Go Docs at [pkg.go.dev/github.com/spiceai/gospice/v3](https://pkg.go.dev/github.com/spiceai/gospice/v3).
 
-For full documentation visit [docs.spice.xyz](https://docs.spice.xyz/sdks/go).
+For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 
 ## Usage
 
@@ -26,7 +26,7 @@ go get github.com/spiceai/gospice/v3
 import "github.com/spiceai/gospice/v3"
 ```
 
-1. Create a SpiceClient passing in your API key. Get your free API key at [spice.xyz](https://spice.xyz).
+1. Create a SpiceClient passing in your API key. Get your free API key at [spice.ai](https://spice.ai).
 
 ```go
 spice := NewSpiceClient()
