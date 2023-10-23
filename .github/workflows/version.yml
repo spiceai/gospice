@@ -35,6 +35,9 @@ jobs:
     if: needs.check-version.outputs.tag-exists == '0'
 
     steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+
       - name: Create and push tag
         run: |
           git config --global user.name "GitHub Action"

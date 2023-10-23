@@ -3,6 +3,7 @@ package gospice
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 )
 
 const (
-	TEST_API_KEY = "323337|b42eceab2e7c4a60a04ad57bebea830d" // spice.xyz/spicehq/gospice-tests
+	TEST_API_KEY = "323337|b42eceab2e7c4a60a04ad57bebea830d" // spice.ai/spicehq/gospice-tests
 )
 
 // Execute a basic query and check for columns and rows
@@ -19,7 +20,14 @@ func TestBasicQuery(t *testing.T) {
 	spice := NewSpiceClient()
 	defer spice.Close()
 
-	if err := spice.Init(TEST_API_KEY); err != nil {
+	var ApiKey string
+	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
+		ApiKey = v
+	} else {
+		ApiKey = TEST_API_KEY
+	}
+
+	if err := spice.Init(ApiKey); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 	}
 
@@ -131,42 +139,42 @@ func TestBasicQuery(t *testing.T) {
 
 	// Test Prices
 	t.Run("Test prices latest", func(t *testing.T) {
-		quote, err := spice.GetPrices(context.Background(), "eth-usd", nil)
+		quotes, err := spice.GetHistoricalPrices(context.Background(), []string{"ETH-USD"}, nil)
 		if err != nil {
 			t.Fatalf("error querying: %s", err.Error())
 		}
 
-		if quote == nil {
+		if quotes == nil {
 			t.Fatalf("expected quote, got nil")
 		}
 
-		if len(quote.Prices) != 10 {
-			t.Fatalf("expected 10 prices, got %d %+v", len(quote.Prices), quote.Prices)
+		quote, exists := quotes["ETH-USD"]
+		if !exists {
+			t.Fatalf("expected quote for ETH-USD, did not get any")
 		}
 
-		if quote.Pair != "ETH-USD" {
-			t.Fatalf("expected ETH-USD, got %s", quote.Pair)
+		if len(quote) != 10 {
+			t.Fatalf("expected 10 prices, got %d %+v", len(quote), quote)
 		}
 
-		if quote.Prices[0].Price == 0 {
-			t.Fatalf("expected price > 0, got %f", quote.Prices[0].Price)
+		if quote[0].Price == 0 {
+			t.Fatalf("expected price > 0, got %f", quote[0].Price)
 		}
 	})
 
-	// TODO(mitch): uncomment once fix for ordered prices is deployed
-	// t.Run("Test prices in specific range", func(t *testing.T) {
-	// 	params := &QuoteParams{
-	// 		StartTime: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
-	// 		EndTime:   time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC),
-	// 	}
+	t.Run("Test prices in specific range", func(t *testing.T) {
+		params := &QuoteParams{
+			StartTime: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+			EndTime:   time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC),
+		}
 
-	// 	quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
-	// 	if err != nil {
-	// 		t.Fatalf("error querying: %s", err.Error())
-	// 	}
+		quote, err := spice.GetHistoricalPrices(context.Background(), []string{"ETH-USD"}, params)
+		if err != nil {
+			t.Fatalf("error querying: %s", err.Error())
+		}
 
-	// 	cupaloy.SnapshotT(t, quote)
-	// })
+		cupaloy.SnapshotT(t, quote)
+	})
 
 	t.Run("Test prices in specific range with specific duration", func(t *testing.T) {
 		params := &QuoteParams{
@@ -175,7 +183,7 @@ func TestBasicQuery(t *testing.T) {
 			Granularity: "24h",
 		}
 
-		quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
+		quote, err := spice.GetHistoricalPrices(context.Background(), []string{"ETH-USD"}, params)
 		if err != nil {
 			t.Fatalf("error querying: %s", err.Error())
 		}
