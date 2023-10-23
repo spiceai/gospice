@@ -168,7 +168,7 @@ func TestBasicQuery(t *testing.T) {
 			EndTime:   time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC),
 		}
 
-		quote, err := spice.GetPrices(context.Background(), "eth-usd", params)
+		quote, err := spice.GetHistoricalPrices(context.Background(), []string{"ETH-USD"}, params)
 		if err != nil {
 			t.Fatalf("error querying: %s", err.Error())
 		}
