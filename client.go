@@ -122,7 +122,7 @@ func (c *SpiceClient) Close() error {
 	c.httpClient.CloseIdleConnections()
 
 	if len(errors) > 0 {
-		return fmt.Errorf("error closing SpiceClient: %s", errors)
+		return fmt.Errorf("error closing SpiceClient: %v", errors)
 	}
 
 	return nil
