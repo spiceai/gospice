@@ -101,13 +101,25 @@ func (c *SpiceClient) SetMaxRetries(maxRetries uint) {
 
 // Close closes the SpiceClient and cleans up resources
 func (c *SpiceClient) Close() error {
+	var errors []error
+
 	if c.flightClient != nil {
-		return c.flightClient.Close()
+		err := c.flightClient.Close()
+		if err != nil {
+			errors = append(errors, err)
+		}
 	}
 	if c.firecacheClient != nil {
-		return c.firecacheClient.Close()
+		err := c.firecacheClient.Close()
+		if err != nil {
+			errors = append(errors, err)
+		}
 	}
 	c.httpClient.CloseIdleConnections()
+
+	if len(errors) > 0 {
+		return fmt.Errorf("error closing SpiceClient: %v", errors)
+	}
 
 	return nil
 }
