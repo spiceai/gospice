@@ -163,7 +163,9 @@ func (c *SpiceClient) queryInternal(ctx context.Context, client flight.Client, a
 		return nil, fmt.Errorf("flight client is not initialized")
 	}
 
-	authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
+	tokenCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	authContext, err := client.AuthenticateBasicToken(tokenCtx, appId, apiKey)
 	if err != nil {
 		return nil, err
 	}
