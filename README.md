@@ -8,7 +8,7 @@ For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 
 ## Usage
 
-> **Note**: There is a [bug in Apache Arrow](https://github.com/apache/arrow/issues/38198) v13 that causes a high rate of errors from concurrent queries. We've addressed this in our fork. To apply the fix, add the following to your `go.mod` file until the fix is released upstream:
+> **Note**: There is a [bug in Apache Arrow](https://github.com/apache/arrow/issues/38198) v14 that causes a high rate of errors from concurrent queries. We've addressed this in our fork. To apply the fix, add the following to your `go.mod` file until the fix is released upstream:
 >
 > ```
 > replace github.com/apache/arrow/go/v14 => github.com/spicehq/arrow/go/v14 v14.0.3-0.20240102132723-66b53585316f
