@@ -11,7 +11,7 @@ For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 > **Note**: There is a [bug in Apache Arrow](https://github.com/apache/arrow/issues/38198) v13 that causes a high rate of errors from concurrent queries. We've addressed this in our fork. To apply the fix, add the following to your `go.mod` file until the fix is released upstream:
 >
 > ```
-> replace github.com/apache/arrow/go/v13 => github.com/spicehq/arrow/go/v13 v13.0.0-20231011105758-b46797bef61d
+> replace github.com/apache/arrow/go/v14 => github.com/spicehq/arrow/go/v13 v14.0.3-0.20240102132723-66b53585316f
 > ```
 
 1. Get the gospice package.
