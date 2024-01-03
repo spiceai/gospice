@@ -3,7 +3,7 @@ package gospice
 import (
 	"context"
 
-	"github.com/apache/arrow/go/v13/arrow/array"
+	"github.com/apache/arrow/go/v14/arrow/array"
 )
 
 // Query executes a query against Spice.ai and returns a Apache Arrow RecordReader

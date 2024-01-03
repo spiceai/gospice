@@ -2,28 +2,28 @@
 
 Golang SDK for Spice.ai
 
-See Go Docs at [pkg.go.dev/github.com/spiceai/gospice/v3](https://pkg.go.dev/github.com/spiceai/gospice/v3).
+See Go Docs at [pkg.go.dev/github.com/spiceai/gospice/v4](https://pkg.go.dev/github.com/spiceai/gospice/v4d).
 
 For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 
 ## Usage
 
-> **Note**: There is a [bug in Apache Arrow](https://github.com/apache/arrow/issues/38198) v13 that causes a high rate of errors from concurrent queries. We've addressed this in our fork. To apply the fix, add the following to your `go.mod` file until the fix is released upstream:
+> **Note**: There is a [bug in Apache Arrow](https://github.com/apache/arrow/issues/38198) v14 that causes a high rate of errors from concurrent queries. We've addressed this in our fork. To apply the fix, add the following to your `go.mod` file until the fix is released upstream:
 >
 > ```
-> replace github.com/apache/arrow/go/v13 => github.com/spicehq/arrow/go/v13 v13.0.0-20231011105758-b46797bef61d
+> replace github.com/apache/arrow/go/v14 => github.com/spicehq/arrow/go/v14 v14.0.3-0.20240102132723-66b53585316f
 > ```
 
 1. Get the gospice package.
 
 ```go
-go get github.com/spiceai/gospice/v3
+go get github.com/spiceai/gospice/v4
 ```
 
 1. Import the package.
 
 ```go
-import "github.com/spiceai/gospice/v3"
+import "github.com/spiceai/gospice/v4"
 ```
 
 1. Create a SpiceClient passing in your API key. Get your free API key at [spice.ai](https://spice.ai).
