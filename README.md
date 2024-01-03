@@ -2,7 +2,7 @@
 
 Golang SDK for Spice.ai
 
-See Go Docs at [pkg.go.dev/github.com/spiceai/gospice/v4](https://pkg.go.dev/github.com/spiceai/gospice/v4d).
+See Go Docs at [pkg.go.dev/github.com/spiceai/gospice/v4](https://pkg.go.dev/github.com/spiceai/gospice/v4).
 
 For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 
