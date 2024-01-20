@@ -70,13 +70,12 @@ See [client_test.go](client_test.go) for examples on querying Ethereum and Polyg
 ### Configuring retry policy
 
 The `SpiceClient` implements connection retrying mechanism (3 attemps by default).
-This could be configured or disabled using `setMaxRetries`:
+The number of attempts can be configured via `NewSpiceClient`:
 
 ```go
 spice := NewSpiceClient()
 spice.SetMaxRetries(5) // Setting to 0 will disable retries
 ```
 
-Note: Retries are automatically performed for connection and system internal errors. However, it is the responsibility of
-the SDK user to properly handle errors such as RESOURCE_EXHAUSTED or similar. This error indicates that the user's quota has
-been reached, and it may be necessary to decide whether to retry the request later or to add a throttling mechanism.
+Retries are performed for connection and system internal errors. It is the SDK user's responsibility to properly
+handle other errors, for example RESOURCE_EXHAUSTED (HTTP 429).
