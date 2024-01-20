@@ -1,4 +1,4 @@
-module github.com/spiceai/gospice/v4.0.1
+module github.com/spiceai/gospice/v4
 
 go 1.20
 
