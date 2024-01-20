@@ -66,3 +66,17 @@ if err := spice.Init("API Key"); err != nil {
 Run `go run .` to execute a sample query and print the results to the console.
 
 See [client_test.go](client_test.go) for examples on querying Ethereum and Polygon blocks.
+
+### Configuring retry policy
+
+The `SpiceClient` implements connection retrying mechanism (3 attemps by default).
+This could be configured or disabled using `setMaxRetries`:
+
+```go
+spice := NewSpiceClient()
+spice.SetMaxRetries(5) // Setting to 0 will disable retries
+```
+
+Note: Retries are automatically performed for connection and system internal errors. However, it is the responsibility of
+the SDK user to properly handle errors such as RESOURCE_EXHAUSTED or similar. This error indicates that the user's quota has
+been reached, and it may be necessary to decide whether to retry the request later or to add a throttling mechanism.
