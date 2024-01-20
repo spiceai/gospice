@@ -17,7 +17,7 @@ For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 1. Get the gospice package.
 
 ```go
-go get github.com/spiceai/gospice/v4.0.1
+go get github.com/spiceai/gospice/v4
 ```
 
 1. Import the package.
