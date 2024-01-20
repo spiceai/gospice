@@ -69,7 +69,7 @@ See [client_test.go](client_test.go) for examples on querying Ethereum and Polyg
 
 ### Connection retry
 
-The `SpiceClient` implements connection retry mechanism (3 attemps by default).
+The `SpiceClient` implements connection retry mechanism (3 attempts by default).
 The number of attempts can be configured via `SetMaxRetries`:
 
 ```go
