@@ -67,10 +67,10 @@ Run `go run .` to execute a sample query and print the results to the console.
 
 See [client_test.go](client_test.go) for examples on querying Ethereum and Polygon blocks.
 
-### Configuring retry policy
+### Connection retry
 
-The `SpiceClient` implements connection retrying mechanism (3 attemps by default).
-The number of attempts can be configured via `NewSpiceClient`:
+The `SpiceClient` implements connection retry mechanism (3 attemps by default).
+The number of attempts can be configured via `SetMaxRetries`:
 
 ```go
 spice := NewSpiceClient()
