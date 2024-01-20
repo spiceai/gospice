@@ -23,7 +23,7 @@ go get github.com/spiceai/gospice/v4.0.1
 1. Import the package.
 
 ```go
-import "github.com/spiceai/gospice/v4.0.1"
+import "github.com/spiceai/gospice/v4"
 ```
 
 1. Create a SpiceClient passing in your API key. Get your free API key at [spice.ai](https://spice.ai).
