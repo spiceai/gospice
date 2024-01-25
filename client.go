@@ -137,7 +137,7 @@ func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId str
 			st, ok := status.FromError(err)
 			if ok {
 				switch st.Code() {
-				case codes.Canceled, codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted, codes.Aborted, codes.Internal:
+				case codes.Unavailable, codes.Unknown, codes.DeadlineExceeded, codes.Aborted, codes.Internal:
 					return err
 				}
 				if strings.Contains(err.Error(), "malformed header: missing HTTP content-type") {
