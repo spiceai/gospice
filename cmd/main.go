@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	gospice "github.com/spiceai/gospice/v5"
+	gospice "github.com/spiceai/gospice/v6"
 )
 
 func querySpiceCloud() {
