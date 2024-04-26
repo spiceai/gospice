@@ -26,7 +26,7 @@ func TestBasicQuery(t *testing.T) {
 		ApiKey = TEST_API_KEY
 	}
 
-	if err := spice.Init(ApiKey); err != nil {
+	if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 	}
 
@@ -80,6 +80,30 @@ func TestBasicQuery(t *testing.T) {
 			if len(hash) != 66 {
 				t.Fatalf("Expected hash length 66, got %d", len(hash))
 			}
+		}
+	})
+}
+
+// Requires local spice running. Follow the quickstart https://github.com/spiceai/spiceai.
+
+func TestLocalRuntime(t *testing.T) {
+	spice := NewSpiceClient()
+	defer spice.Close()
+
+	if err := spice.Init(); err != nil {
+		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+	}
+
+	t.Run("Query Local Dataset", func(t *testing.T) {
+		reader, err := spice.Query(context.Background(), "select * from taxi_trips limit 3;")
+		if err != nil {
+			panic(fmt.Errorf("error querying: %w", err))
+		}
+		defer reader.Release()
+
+		for reader.Next() {
+			record := reader.Record()
+			defer record.Release()
 		}
 	})
 }
