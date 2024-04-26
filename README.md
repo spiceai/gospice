@@ -27,10 +27,13 @@ spice := NewSpiceClient()
 defer spice.Close()
 ```
 
-1. Initialize the SpiceClient.
+1. Initialize the SpiceClient with spice.ai cloud.
 
 ```go
-if err := spice.Init("API Key"); err != nil {
+if err := spice.Init(
+    spice.WithApiKey(ApiKey),
+    spice.WithSpiceCloudAddress()
+); err != nil {
     panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 }
 ```
@@ -53,6 +56,28 @@ if err := spice.Init("API Key"); err != nil {
         defer record.Release()
         fmt.Println(record)
     }
+```
+
+### Using local spice runtime
+
+Follow the [quickstart guide](https://github.com/spiceai/spiceai?tab=readme-ov-file#%EF%B8%8F-quickstart-local-machine) to install and run spice locally
+
+Initialize the SpiceClient to use local runtime connection:
+
+```go
+if err := spice.Init(); err != nil {
+    panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+}
+```
+
+Configure with a custom flight address:
+
+```go
+if err := spice.Init(
+    spice.WithFlightAddress("grpc://localhost:50052")
+); err != nil {
+    panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+}
 ```
 
 ## Example

@@ -22,7 +22,7 @@ func TestFireQuery(t *testing.T) {
 		ApiKey = TEST_API_KEY
 	}
 
-	if err := spice.Init(ApiKey); err != nil {
+	if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 	}
 
