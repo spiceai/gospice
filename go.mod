@@ -3,7 +3,7 @@ module github.com/spiceai/gospice/v6
 go 1.22
 
 require (
-	github.com/apache/arrow/go/v15 v15.0.2
+	github.com/apache/arrow/go/v16 v16.0.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	google.golang.org/grpc v1.63.2
 )
