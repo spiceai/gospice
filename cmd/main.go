@@ -18,7 +18,7 @@ func querySpiceCloud() {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 	}
 
-	reader, err := spice.Query(context.Background(), "SELECT * FROM eth_recent_blocks ORDER BY number LIMIT 10")
+	reader, err := spice.Query(context.Background(), "SELECT * FROM eth.recent_blocks ORDER BY number LIMIT 10")
 	if err != nil {
 		panic(fmt.Errorf("error querying: %w", err))
 	}
