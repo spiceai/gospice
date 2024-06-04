@@ -27,7 +27,7 @@ func TestFireQuery(t *testing.T) {
 	}
 
 	t.Run("Recent Ethereum Blocks", func(t *testing.T) {
-		reader, err := spice.FireQuery(context.Background(), "SELECT number, \"timestamp\", hash FROM eth.recent_blocks ORDER BY number LIMIT 10")
+		reader, err := spice.FireQuery(context.Background(), "SELECT number, \"timestamp\", hash FROM eth_recent_blocks ORDER BY number LIMIT 10")
 		if err != nil {
 			panic(fmt.Errorf("error querying: %w", err))
 		}
