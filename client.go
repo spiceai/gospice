@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apache/arrow/go/v13/arrow/array"
-	"github.com/apache/arrow/go/v13/arrow/flight"
+	"github.com/apache/arrow/go/v16/arrow/array"
+	"github.com/apache/arrow/go/v16/arrow/flight"
 	"github.com/cenkalti/backoff/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -23,7 +23,8 @@ const (
 	MAX_MESSAGE_SIZE_BYTES = 100 * 1024 * 1024
 )
 
-var defaultConfig = LoadConfig()
+var defaultCloudConfig = LoadConfig()
+var defaultLocalConfig = LoadLocalConfig()
 
 // SpiceClient is a client for Spice.ai - Data and AI infrastructure for web3
 // https://spice.ai
@@ -44,14 +45,14 @@ type SpiceClient struct {
 
 // NewSpiceClient creates a new SpiceClient
 func NewSpiceClient() *SpiceClient {
-	return NewSpiceClientWithAddress(defaultConfig.FlightUrl, defaultConfig.FirecacheUrl)
+	return NewSpiceClientWithAddress(defaultLocalConfig.FlightUrl, defaultLocalConfig.FirecacheUrl)
 }
 
 func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *SpiceClient {
 	spiceClient := &SpiceClient{
 		flightAddress:    flightAddress,
 		firecacheAddress: firecacheAddress,
-		baseHttpUrl:      defaultConfig.HttpUrl,
+		baseHttpUrl:      defaultCloudConfig.HttpUrl,
 		httpClient: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 10,
@@ -64,14 +65,54 @@ func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *S
 	return spiceClient
 }
 
-// Init initializes the SpiceClient
-func (c *SpiceClient) Init(apiKey string) error {
-	if apiKey == "" {
-		return fmt.Errorf("apiKey is required")
+type SpiceClientModifier func(c *SpiceClient) error
+
+func WithApiKey(apiKey string) SpiceClientModifier {
+	return func(c *SpiceClient) error {
+		if apiKey == "" {
+			return fmt.Errorf("apiKey is required")
+		}
+		apiKeyParts := strings.Split(apiKey, "|")
+		if len(apiKeyParts) != 2 {
+			return fmt.Errorf("apiKey is invalid")
+		}
+
+		c.appId = apiKeyParts[0]
+		c.apiKey = apiKey
+
+		return nil
 	}
-	apiKeyParts := strings.Split(apiKey, "|")
-	if len(apiKeyParts) != 2 {
-		return fmt.Errorf("apiKey is invalid")
+}
+
+func WithFlightAddress(address string) SpiceClientModifier {
+	return func(c *SpiceClient) error {
+		c.flightAddress = address
+		return nil
+	}
+}
+
+func WithFirecacheAddress(address string) SpiceClientModifier {
+	return func(c *SpiceClient) error {
+		c.firecacheAddress = address
+		return nil
+	}
+}
+
+func WithSpiceCloudAddress() SpiceClientModifier {
+	return func(c *SpiceClient) error {
+		c.flightAddress = defaultCloudConfig.FlightUrl
+		c.firecacheAddress = defaultCloudConfig.FirecacheUrl
+		return nil
+	}
+}
+
+// Init initializes the SpiceClient
+func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
+	for _, opt := range opts {
+		err := opt(c)
+		if err != nil {
+			return err
+		}
 	}
 
 	systemCertPool, err := x509.SystemCertPool()
@@ -89,8 +130,6 @@ func (c *SpiceClient) Init(apiKey string) error {
 		return fmt.Errorf("error creating Spice Firecache client: %w", err)
 	}
 
-	c.appId = apiKeyParts[0]
-	c.apiKey = apiKey
 	c.flightClient = flightClient
 	c.firecacheClient = firecacheClient
 
@@ -105,13 +144,25 @@ func (c *SpiceClient) SetMaxRetries(maxRetries uint) {
 
 // Close closes the SpiceClient and cleans up resources
 func (c *SpiceClient) Close() error {
+	var errors []error
+
 	if c.flightClient != nil {
-		return c.flightClient.Close()
+		err := c.flightClient.Close()
+		if err != nil {
+			errors = append(errors, err)
+		}
 	}
 	if c.firecacheClient != nil {
-		return c.firecacheClient.Close()
+		err := c.firecacheClient.Close()
+		if err != nil {
+			errors = append(errors, err)
+		}
 	}
 	c.httpClient.CloseIdleConnections()
+
+	if len(errors) > 0 {
+		return fmt.Errorf("error closing SpiceClient: %v", errors)
+	}
 
 	return nil
 }
@@ -125,7 +176,7 @@ func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId str
 			st, ok := status.FromError(err)
 			if ok {
 				switch st.Code() {
-				case codes.Canceled, codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted, codes.Aborted, codes.Internal:
+				case codes.Unavailable, codes.Unknown, codes.DeadlineExceeded, codes.Aborted, codes.Internal:
 					return err
 				}
 				if strings.Contains(err.Error(), "malformed header: missing HTTP content-type") {

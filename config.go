@@ -16,6 +16,14 @@ func LoadConfig() ClientConfig {
 	}
 }
 
+func LoadLocalConfig() ClientConfig {
+	return ClientConfig{
+		HttpUrl:      getEnvOrDefault("SPICE_LOCAL_HTTP_URL", "http://localhost:3000"),
+		FlightUrl:    getEnvOrDefault("SPICE_LOCAL_FLIGHT_URL", "grpc://localhost:50051"),
+		FirecacheUrl: getEnvOrDefault("SPICE_FIRECACHE_URL", "firecache.spiceai.io:443"),
+	}
+}
+
 func getEnvOrDefault(key string, defaultValue string) string {
 	if v, exists := os.LookupEnv(key); exists {
 		return v

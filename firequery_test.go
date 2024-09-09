@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apache/arrow/go/v13/arrow/array"
+	"github.com/apache/arrow/go/v16/arrow/array"
 )
 
 // Execute a basic query and check for columns and rows
@@ -22,12 +22,12 @@ func TestFireQuery(t *testing.T) {
 		ApiKey = TEST_API_KEY
 	}
 
-	if err := spice.Init(ApiKey); err != nil {
+	if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 	}
 
 	t.Run("Recent Ethereum Blocks", func(t *testing.T) {
-		reader, err := spice.FireQuery(context.Background(), "SELECT number, \"timestamp\", hash FROM eth.recent_blocks ORDER BY number LIMIT 10")
+		reader, err := spice.FireQuery(context.Background(), "SELECT number, \"timestamp\", hash FROM eth_recent_blocks ORDER BY number LIMIT 10")
 		if err != nil {
 			panic(fmt.Errorf("error querying: %w", err))
 		}

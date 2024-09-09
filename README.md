@@ -2,28 +2,22 @@
 
 Golang SDK for Spice.ai
 
-See Go Docs at [pkg.go.dev/github.com/spiceai/gospice/v3](https://pkg.go.dev/github.com/spiceai/gospice/v3).
+See Go Docs at [pkg.go.dev/github.com/spiceai/gospice/v6](https://pkg.go.dev/github.com/spiceai/gospice/v6).
 
 For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 
 ## Usage
 
-> **Note**: There is a [bug in Apache Arrow](https://github.com/apache/arrow/issues/38198) v13 that causes a high rate of errors from concurrent queries. We've addressed this in our fork. To apply the fix, add the following to your `go.mod` file until the fix is released upstream:
->
-> ```
-> replace github.com/apache/arrow/go/v13 => github.com/spicehq/arrow/go/v13 v13.0.0-20231011105758-b46797bef61d
-> ```
-
 1. Get the gospice package.
 
 ```go
-go get github.com/spiceai/gospice/v3
+go get github.com/spiceai/gospice/v6
 ```
 
 1. Import the package.
 
 ```go
-import "github.com/spiceai/gospice/v3"
+import "github.com/spiceai/gospice/v6"
 ```
 
 1. Create a SpiceClient passing in your API key. Get your free API key at [spice.ai](https://spice.ai).
@@ -33,10 +27,13 @@ spice := NewSpiceClient()
 defer spice.Close()
 ```
 
-1. Initialize the SpiceClient.
+1. Initialize the SpiceClient with spice.ai cloud.
 
 ```go
-if err := spice.Init("API Key"); err != nil {
+if err := spice.Init(
+    spice.WithApiKey(ApiKey),
+    spice.WithSpiceCloudAddress()
+); err != nil {
     panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 }
 ```
@@ -61,8 +58,43 @@ if err := spice.Init("API Key"); err != nil {
     }
 ```
 
+### Using local spice runtime
+
+Follow the [quickstart guide](https://github.com/spiceai/spiceai?tab=readme-ov-file#%EF%B8%8F-quickstart-local-machine) to install and run spice locally
+
+Initialize the SpiceClient to use local runtime connection:
+
+```go
+if err := spice.Init(); err != nil {
+    panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+}
+```
+
+Configure with a custom flight address:
+
+```go
+if err := spice.Init(
+    spice.WithFlightAddress("grpc://localhost:50052")
+); err != nil {
+    panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+}
+```
+
 ## Example
 
 Run `go run .` to execute a sample query and print the results to the console.
 
 See [client_test.go](client_test.go) for examples on querying Ethereum and Polygon blocks.
+
+### Connection retry
+
+The `SpiceClient` implements connection retry mechanism (3 attempts by default).
+The number of attempts can be configured via `SetMaxRetries`:
+
+```go
+spice := NewSpiceClient()
+spice.SetMaxRetries(5) // Setting to 0 will disable retries
+```
+
+Retries are performed for connection and system internal errors. It is the SDK user's responsibility to properly
+handle other errors, for example RESOURCE_EXHAUSTED (HTTP 429).
