@@ -52,7 +52,28 @@ func querySpiceLocal() {
 	}
 }
 
+// Test refreshing a local spiced dataset.
+func localDatasetRefresh() {
+	spice := gospice.NewSpiceClient()
+	defer spice.Close()
+
+	if err := spice.Init(
+		gospice.WithHttpAddress("http://127.0.0.1:8090"),
+	); err != nil {
+		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+	}
+
+	refresh_mode := gospice.RefreshModeFull
+	sql := "SELECT * FROM test where gas_used > 20000000"
+	dataset := "test"
+
+	if err := spice.RefreshDataset(context.Background(), dataset, &sql, &refresh_mode); err != nil {
+		panic(fmt.Errorf("error refreshing dataset: %w", err))
+	}
+}
+
 func main() {
 	querySpiceCloud()
 	querySpiceLocal()
+	localDatasetRefresh()
 }

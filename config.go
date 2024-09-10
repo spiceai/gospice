@@ -30,3 +30,5 @@ func getEnvOrDefault(key string, defaultValue string) string {
 	}
 	return defaultValue
 }
+
+const GO_SPICE_VERSION = "v6.0"
