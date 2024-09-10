@@ -36,7 +36,6 @@ func constructRefreshRequest(sql *string, mode *RefreshMode) (io.Reader, error) 
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling JSON: %w", err)
 	}
-	fmt.Printf("body %s\n", string(jsonData))
 
 	body := bytes.NewBuffer(jsonData)
 	return body, nil
