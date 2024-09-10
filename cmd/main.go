@@ -75,5 +75,5 @@ func localDatasetRefresh() {
 func main() {
 	querySpiceCloud()
 	querySpiceLocal()
-	// localDatasetRefresh()
+	localDatasetRefresh()
 }
