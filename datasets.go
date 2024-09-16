@@ -19,11 +19,12 @@ const (
 type DatasetRefreshApiRequest struct {
 	RefreshSQL *string      `json:"refresh_sql,omitempty"`
 	Mode       *RefreshMode `json:"refresh_mode,omitempty"`
+	MaxJitter  *string      `json:"refresh_jitter_max,omitempty"`
 }
 
-func constructRefreshRequest(sql *string, mode *RefreshMode) (io.Reader, error) {
+func constructRefreshRequest(sql *string, mode *RefreshMode, max_jitter *string) (io.Reader, error) {
 	r := DatasetRefreshApiRequest{}
-	if sql == nil && mode == nil {
+	if sql == nil && mode == nil && max_jitter == nil {
 		return nil, nil
 	}
 	if sql != nil {
@@ -31,6 +32,9 @@ func constructRefreshRequest(sql *string, mode *RefreshMode) (io.Reader, error) 
 	}
 	if mode != nil {
 		r.Mode = mode
+	}
+	if max_jitter != nil {
+		r.MaxJitter = max_jitter
 	}
 	jsonData, err := json.Marshal(r)
 	if err != nil {
@@ -41,8 +45,8 @@ func constructRefreshRequest(sql *string, mode *RefreshMode) (io.Reader, error) 
 	return body, nil
 }
 
-func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, refresh_sql *string, refresh_mode *RefreshMode) error {
-	body, err := constructRefreshRequest(refresh_sql, refresh_mode)
+func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, refresh_sql *string, refresh_mode *RefreshMode, max_jitter *string) error {
+	body, err := constructRefreshRequest(refresh_sql, refresh_mode, max_jitter)
 	if err != nil {
 		return err
 	}

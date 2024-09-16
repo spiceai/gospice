@@ -66,8 +66,9 @@ func localDatasetRefresh() {
 	refresh_mode := gospice.RefreshModeFull
 	sql := "SELECT * FROM test where gas_used > 20000000"
 	dataset := "test"
+	max_jitter := "10s"
 
-	if err := spice.RefreshDataset(context.Background(), dataset, &sql, &refresh_mode); err != nil {
+	if err := spice.RefreshDataset(context.Background(), dataset, &sql, &refresh_mode, &max_jitter); err != nil {
 		panic(fmt.Errorf("error refreshing dataset: %w", err))
 	}
 }
