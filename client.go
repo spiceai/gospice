@@ -98,6 +98,13 @@ func WithFirecacheAddress(address string) SpiceClientModifier {
 	}
 }
 
+func WithHttpAddress(address string) SpiceClientModifier {
+	return func(c *SpiceClient) error {
+		c.baseHttpUrl = address
+		return nil
+	}
+}
+
 func WithSpiceCloudAddress() SpiceClientModifier {
 	return func(c *SpiceClient) error {
 		c.flightAddress = defaultCloudConfig.FlightUrl
