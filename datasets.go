@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 )
 
@@ -22,34 +21,13 @@ type DatasetRefreshApiRequest struct {
 	MaxJitter  *string      `json:"refresh_jitter_max,omitempty"`
 }
 
-func constructRefreshRequest(sql *string, mode *RefreshMode, max_jitter *string) (io.Reader, error) {
-	r := DatasetRefreshApiRequest{}
-	if sql == nil && mode == nil && max_jitter == nil {
-		return nil, nil
-	}
-	if sql != nil {
-		r.RefreshSQL = sql
-	}
-	if mode != nil {
-		r.Mode = mode
-	}
-	if max_jitter != nil {
-		r.MaxJitter = max_jitter
-	}
-	jsonData, err := json.Marshal(r)
+func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, opts *DatasetRefreshApiRequest) error {
+	jsonData, err := json.Marshal(opts)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling JSON: %w", err)
+		return fmt.Errorf("error marshaling DatasetRefreshApiRequest opts: %w", err)
 	}
 
 	body := bytes.NewBuffer(jsonData)
-	return body, nil
-}
-
-func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, refresh_sql *string, refresh_mode *RefreshMode, max_jitter *string) error {
-	body, err := constructRefreshRequest(refresh_sql, refresh_mode, max_jitter)
-	if err != nil {
-		return err
-	}
 
 	url := fmt.Sprintf("%s/v1/datasets/%s/acceleration/refresh", c.baseHttpUrl, dataset)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
