@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type RefreshMode string
@@ -15,16 +18,16 @@ const (
 	RefreshModeAppend RefreshMode = "append"
 )
 
-type DatasetRefreshApiRequest struct {
+type DatasetRefreshRequest struct {
 	RefreshSQL *string      `json:"refresh_sql,omitempty"`
 	Mode       *RefreshMode `json:"refresh_mode,omitempty"`
 	MaxJitter  *string      `json:"refresh_jitter_max,omitempty"`
 }
 
-func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, opts *DatasetRefreshApiRequest) error {
+func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, opts *DatasetRefreshRequest) error {
 	jsonData, err := json.Marshal(opts)
 	if err != nil {
-		return fmt.Errorf("error marshaling DatasetRefreshApiRequest opts: %w", err)
+		return fmt.Errorf("error marshaling DatasetRefreshRequest opts: %w", err)
 	}
 
 	body := bytes.NewBuffer(jsonData)
@@ -33,6 +36,9 @@ func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, opts *
 	if err != nil {
 		return fmt.Errorf("error creating request: %w", err)
 	}
+
+	req = req.WithContext(ctx)
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	req.Header.Set("X-API-Key", c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
