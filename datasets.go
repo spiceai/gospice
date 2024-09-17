@@ -28,7 +28,6 @@ func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, opts *
 	}
 
 	body := bytes.NewBuffer(jsonData)
-
 	url := fmt.Sprintf("%s/v1/datasets/%s/acceleration/refresh", c.baseHttpUrl, dataset)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
