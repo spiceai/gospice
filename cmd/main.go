@@ -68,7 +68,11 @@ func localDatasetRefresh() {
 	dataset := "test"
 	max_jitter := "10s"
 
-	if err := spice.RefreshDataset(context.Background(), dataset, &sql, &refresh_mode, &max_jitter); err != nil {
+	if err := spice.RefreshDataset(context.Background(), dataset, &gospice.DatasetRefreshApiRequest{
+		RefreshSQL: &sql,
+		Mode:       &refresh_mode,
+		MaxJitter:  &max_jitter,
+	}); err != nil {
 		panic(fmt.Errorf("error refreshing dataset: %w", err))
 	}
 }
