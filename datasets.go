@@ -59,7 +59,7 @@ func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, refres
 
 	req.Header.Set("X-API-Key", c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", fmt.Sprintf("gospice %s", GO_SPICE_VERSION))
+	req.Header.Set("X-Spice-User-Agent", c.userAgent)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

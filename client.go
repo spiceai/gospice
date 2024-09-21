@@ -41,6 +41,7 @@ type SpiceClient struct {
 	httpClient      http.Client
 	backoffPolicy   backoff.BackOff
 	maxRetries      uint
+	userAgent	    string
 }
 
 // NewSpiceClient creates a new SpiceClient
@@ -62,6 +63,7 @@ func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *S
 		maxRetries: 3,
 	}
 	spiceClient.backoffPolicy = spiceClient.getBackoffPolicy()
+	spiceClient.userAgent = GetSpiceUserAgent()
 	return spiceClient
 }
 
