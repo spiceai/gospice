@@ -6,9 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 )
 
 type RefreshMode string
@@ -32,13 +29,13 @@ func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, opts *
 
 	body := bytes.NewBuffer(jsonData)
 	url := fmt.Sprintf("%s/v1/datasets/%s/acceleration/refresh", c.baseHttpUrl, dataset)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return fmt.Errorf("error creating request: %w", err)
 	}
 
-	req = req.WithContext(ctx)
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+	req = req.WithContext(c.traceHttpRequest(ctx, "RefreshDataset", req))
 
 	req.Header.Set("X-API-Key", c.apiKey)
 	req.Header.Set("Content-Type", "application/json")

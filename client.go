@@ -12,6 +12,9 @@ import (
 	"github.com/apache/arrow/go/v16/arrow/array"
 	"github.com/apache/arrow/go/v16/arrow/flight"
 	"github.com/cenkalti/backoff/v4"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -141,6 +144,16 @@ func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 	c.firecacheClient = firecacheClient
 
 	return nil
+}
+
+func (c *SpiceClient) tracer() trace.Tracer {
+	return GetOrCreateTracer("github.com/spiceai/gospice")
+}
+
+func (c *SpiceClient) traceHttpRequest(ctx context.Context, spanName string, req *http.Request) context.Context {
+	ctx, _ = c.tracer().Start(ctx, spanName)
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+	return ctx
 }
 
 // Sets the maximum number of times to retry Query and FireQuery calls.

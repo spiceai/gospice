@@ -5,9 +5,6 @@ import (
 	"fmt"
 
 	gospice "github.com/spiceai/gospice/v6"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 func querySpiceCloud() {
@@ -73,9 +70,6 @@ func localDatasetRefresh() {
 
 	// Create context that has OpenTelemetry tracing enabled.
 	ctx := context.Background()
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
-	tracer := sdktrace.NewTracerProvider().Tracer("gospice:cmd:main.go")
-	ctx, _ = tracer.Start(ctx, "This is a span from gospice")
 
 	if err := spice.RefreshDataset(ctx, dataset, &gospice.DatasetRefreshRequest{
 		RefreshSQL: &sql,
