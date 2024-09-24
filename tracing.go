@@ -10,11 +10,10 @@ import (
 )
 
 func isNoopTracerProvider(provider trace.TracerProvider) bool {
-	// Create a tracer and start a span
 	tracer := provider.Tracer("example-tracer")
 	_, span := tracer.Start(context.Background(), "example-span")
 
-	// The NoopTracerProvider will create a no-op span with an empty SpanContext
+	// A NoopTracerProvider will create a no-op span that is invalid
 	return !span.SpanContext().IsValid()
 }
 

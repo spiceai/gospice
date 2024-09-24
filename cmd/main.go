@@ -68,10 +68,7 @@ func localDatasetRefresh() {
 	dataset := "test"
 	max_jitter := "10s"
 
-	// Create context that has OpenTelemetry tracing enabled.
-	ctx := context.Background()
-
-	if err := spice.RefreshDataset(ctx, dataset, &gospice.DatasetRefreshRequest{
+	if err := spice.RefreshDataset(context.Background(), dataset, &gospice.DatasetRefreshRequest{
 		RefreshSQL: &sql,
 		Mode:       &refresh_mode,
 		MaxJitter:  &max_jitter,
