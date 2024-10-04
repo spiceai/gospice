@@ -262,7 +262,17 @@ func FlightHeadersInterceptor(headers map[string]string) grpc.UnaryClientInterce
 		invoker grpc.UnaryInvoker,
 		opts ...grpc.CallOption,
 	) error {
-		md := metadata.New(headers)
+		// ensure existing headers are retained
+		md, ok := metadata.FromOutgoingContext(ctx)
+		if !ok {
+			md = metadata.New(headers)
+		}
+
+		// add new headers
+		for k, v := range headers {
+			md[k] = append(md[k], v)
+		}
+
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
@@ -289,7 +299,7 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 			grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES),
 		),
 		grpc.WithUnaryInterceptor(FlightHeadersInterceptor(map[string]string{
-			"X-Spice-User-Agent": c.userAgent,
+			"x-spice-user-agent": c.userAgent,
 		})),
 	}
 
