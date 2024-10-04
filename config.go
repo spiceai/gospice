@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 )
 
 type ClientConfig struct {
@@ -71,5 +72,20 @@ func GetSpiceUserAgent() string {
 
 	osVersion := GetOSRelease()
 
-	return fmt.Sprintf("gospice %s (%s/%s %s)", GO_SPICE_VERSION, osType, osVersion, osMachine)
+	userAgent := fmt.Sprintf("gospice %s (%s/%s %s)", GO_SPICE_VERSION, osType, osVersion, osMachine)
+
+	// strip any non-printable ASCII characters
+	return RemoveNonPrintableASCII(userAgent)
+}
+
+func RemoveNonPrintableASCII(str string) string {
+	var builder strings.Builder
+
+	for _, ch := range str {
+		if ch >= 32 && ch <= 126 { // printable ASCII characters range from 32 to 126
+			builder.WriteRune(ch)
+		}
+	}
+
+	return builder.String()
 }
