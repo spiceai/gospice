@@ -36,7 +36,7 @@ func getEnvOrDefault(key string, defaultValue string) string {
 	return defaultValue
 }
 
-const GO_SPICE_VERSION = "6.0"
+const GO_SPICE_VERSION = "6.0.0"
 
 func GetSpiceUserAgent() string {
 	// get OS type, release and machine type
