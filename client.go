@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -44,6 +45,7 @@ type SpiceClient struct {
 	httpClient      http.Client
 	backoffPolicy   backoff.BackOff
 	maxRetries      uint
+	userAgent       string
 }
 
 // NewSpiceClient creates a new SpiceClient
@@ -65,6 +67,7 @@ func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *S
 		maxRetries: 3,
 	}
 	spiceClient.backoffPolicy = spiceClient.getBackoffPolicy()
+	spiceClient.userAgent = GetSpiceUserAgent()
 	return spiceClient
 }
 
@@ -250,6 +253,31 @@ func (c *SpiceClient) queryInternal(ctx context.Context, client flight.Client, a
 	return rdr, nil
 }
 
+func FlightHeadersInterceptor(headers map[string]string) grpc.UnaryClientInterceptor {
+	return func(
+		ctx context.Context,
+		method string,
+		req, reply interface{},
+		cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker,
+		opts ...grpc.CallOption,
+	) error {
+		// ensure existing headers are retained
+		md, ok := metadata.FromOutgoingContext(ctx)
+		if !ok {
+			md = metadata.New(headers)
+		}
+
+		// add new headers
+		for k, v := range headers {
+			md[k] = append(md[k], v)
+		}
+
+		ctx = metadata.NewOutgoingContext(ctx, md)
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
 func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
 	retryPolicy := fmt.Sprintf(`{
 		"methodConfig": [{
@@ -270,6 +298,9 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 			grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
 			grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES),
 		),
+		grpc.WithUnaryInterceptor(FlightHeadersInterceptor(map[string]string{
+			"x-spice-user-agent": c.userAgent,
+		})),
 	}
 
 	if strings.HasPrefix(address, "grpc://") {
