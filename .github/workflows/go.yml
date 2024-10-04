@@ -7,13 +7,18 @@ on:
     branches: ["trunk"]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build_and_test:
+    name: Build and test ${{matrix.os}}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: 1.22
 
@@ -21,7 +26,7 @@ jobs:
         run: go vet -v ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v6
 
       - name: Build
         run: go build -v ./...

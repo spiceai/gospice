@@ -1,9 +1,10 @@
 package gospice
 
-import "runtime"
-import "fmt"
-import "os"
-import "golang.org/x/sys/unix"
+import (
+	"fmt"
+	"os"
+	"runtime"
+)
 
 type ClientConfig struct {
 	HttpUrl      string `json:"http_url,omitempty"`
@@ -34,19 +35,7 @@ func getEnvOrDefault(key string, defaultValue string) string {
 	return defaultValue
 }
 
-const GO_SPICE_VERSION = "v6.0"
-
-func GetOSRelease() string {
-	if runtime.GOOS == "windows" {
-		// do the windows thing
-		return "unknown"
-	} else {
-		u := unix.Utsname{}
-		unix.Uname(&u)
-		// convert []byte to string
-		return string(u.Release[:])
-	}
-}
+const GO_SPICE_VERSION = "6.0"
 
 func GetSpiceUserAgent() string {
 	// get OS type, release and machine type
@@ -60,13 +49,13 @@ func GetSpiceUserAgent() string {
 		osType = "Linux"
 	case "windows":
 		osType = "Windows"
-		case "freebsd":
+	case "freebsd":
 		osType = "FreeBSD"
-		case "openbsd":
+	case "openbsd":
 		osType = "OpenBSD"
-		case "android":
+	case "android":
 		osType = "Android"
-		case "ios":
+	case "ios":
 		osType = "iOS"
 	}
 
