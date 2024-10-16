@@ -2,6 +2,7 @@ package gospice
 
 import (
 	"context"
+	"net/http"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -29,4 +30,14 @@ func GetOrCreateTracer(traceName string) trace.Tracer {
 	}
 
 	return tracing.Tracer(traceName)
+}
+
+func (c *SpiceClient) tracer() trace.Tracer {
+	return GetOrCreateTracer("github.com/spiceai/gospice")
+}
+
+func (c *SpiceClient) traceHttpRequest(ctx context.Context, spanName string, req *http.Request) context.Context {
+	ctx, _ = c.tracer().Start(ctx, spanName)
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+	return ctx
 }

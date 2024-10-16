@@ -9,18 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apache/arrow/go/v16/arrow/array"
 	"github.com/apache/arrow/go/v16/arrow/flight"
 	"github.com/cenkalti/backoff/v4"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 )
 
 const (
@@ -34,30 +28,27 @@ var defaultLocalConfig = LoadLocalConfig()
 // https://spice.ai
 // For documentation visit https://docs.spice.ai/sdks/go-sdk
 type SpiceClient struct {
-	appId            string
-	apiKey           string
-	flightAddress    string
-	firecacheAddress string
-	baseHttpUrl      string
+	appId         string
+	apiKey        string
+	flightAddress string
+	baseHttpUrl   string
 
-	flightClient    flight.Client
-	firecacheClient flight.Client
-	httpClient      http.Client
-	backoffPolicy   backoff.BackOff
-	maxRetries      uint
-	userAgent       string
+	flightClient  flight.Client
+	httpClient    http.Client
+	backoffPolicy backoff.BackOff
+	maxRetries    uint
+	userAgent     string
 }
 
 // NewSpiceClient creates a new SpiceClient
 func NewSpiceClient() *SpiceClient {
-	return NewSpiceClientWithAddress(defaultLocalConfig.FlightUrl, defaultLocalConfig.FirecacheUrl)
+	return NewSpiceClientWithAddress(defaultLocalConfig.FlightUrl)
 }
 
-func NewSpiceClientWithAddress(flightAddress string, firecacheAddress string) *SpiceClient {
+func NewSpiceClientWithAddress(flightAddress string) *SpiceClient {
 	spiceClient := &SpiceClient{
-		flightAddress:    flightAddress,
-		firecacheAddress: firecacheAddress,
-		baseHttpUrl:      defaultCloudConfig.HttpUrl,
+		flightAddress: flightAddress,
+		baseHttpUrl:   defaultCloudConfig.HttpUrl,
 		httpClient: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 10,
@@ -97,13 +88,6 @@ func WithFlightAddress(address string) SpiceClientModifier {
 	}
 }
 
-func WithFirecacheAddress(address string) SpiceClientModifier {
-	return func(c *SpiceClient) error {
-		c.firecacheAddress = address
-		return nil
-	}
-}
-
 func WithHttpAddress(address string) SpiceClientModifier {
 	return func(c *SpiceClient) error {
 		c.baseHttpUrl = address
@@ -114,7 +98,6 @@ func WithHttpAddress(address string) SpiceClientModifier {
 func WithSpiceCloudAddress() SpiceClientModifier {
 	return func(c *SpiceClient) error {
 		c.flightAddress = defaultCloudConfig.FlightUrl
-		c.firecacheAddress = defaultCloudConfig.FirecacheUrl
 		return nil
 	}
 }
@@ -138,25 +121,9 @@ func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 		return fmt.Errorf("error creating Spice Flight client: %w", err)
 	}
 
-	firecacheClient, err := c.createClient(c.firecacheAddress, systemCertPool)
-	if err != nil {
-		return fmt.Errorf("error creating Spice Firecache client: %w", err)
-	}
-
 	c.flightClient = flightClient
-	c.firecacheClient = firecacheClient
 
 	return nil
-}
-
-func (c *SpiceClient) tracer() trace.Tracer {
-	return GetOrCreateTracer("github.com/spiceai/gospice")
-}
-
-func (c *SpiceClient) traceHttpRequest(ctx context.Context, spanName string, req *http.Request) context.Context {
-	ctx, _ = c.tracer().Start(ctx, spanName)
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
-	return ctx
 }
 
 // Sets the maximum number of times to retry Query and FireQuery calls.
@@ -175,12 +142,6 @@ func (c *SpiceClient) Close() error {
 			errors = append(errors, err)
 		}
 	}
-	if c.firecacheClient != nil {
-		err := c.firecacheClient.Close()
-		if err != nil {
-			errors = append(errors, err)
-		}
-	}
 	c.httpClient.CloseIdleConnections()
 
 	if len(errors) > 0 {
@@ -188,69 +149,6 @@ func (c *SpiceClient) Close() error {
 	}
 
 	return nil
-}
-
-func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
-	var rdr array.RecordReader
-	err := backoff.Retry(func() error {
-		var err error
-		rdr, err = c.queryInternal(ctx, client, appId, apiKey, sql)
-		if err != nil {
-			st, ok := status.FromError(err)
-			if ok {
-				switch st.Code() {
-				case codes.Unavailable, codes.Unknown, codes.DeadlineExceeded, codes.Aborted, codes.Internal:
-					return err
-				}
-				if strings.Contains(err.Error(), "malformed header: missing HTTP content-type") {
-					return err
-				}
-				if err.Error() == "rpc error: code = Unknown desc = " {
-					return err
-				}
-			}
-			return backoff.Permanent(err)
-		}
-		return nil
-	}, backoff.WithMaxRetries(c.backoffPolicy, uint64(c.maxRetries)))
-	if err != nil {
-		return nil, err
-	}
-
-	return rdr, nil
-}
-
-func (c *SpiceClient) queryInternal(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
-	if client == nil {
-		return nil, fmt.Errorf("flight client is not initialized")
-	}
-
-	authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
-	if err != nil {
-		return nil, err
-	}
-
-	fd := &flight.FlightDescriptor{
-		Type: flight.DescriptorCMD,
-		Cmd:  []byte(sql),
-	}
-
-	info, err := client.GetFlightInfo(authContext, fd)
-	if err != nil {
-		return nil, err
-	}
-
-	stream, err := client.DoGet(authContext, info.Endpoint[0].Ticket)
-	if err != nil {
-		return nil, err
-	}
-
-	rdr, err := flight.NewRecordReader(stream)
-	if err != nil {
-		return nil, err
-	}
-
-	return rdr, nil
 }
 
 func FlightHeadersInterceptor(headers map[string]string) grpc.UnaryClientInterceptor {
