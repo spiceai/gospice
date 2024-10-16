@@ -15,15 +15,10 @@ import (
 // Query executes a query against Spice.ai and returns a Apache Arrow RecordReader
 // For more information on Apache Arrow RecordReader visit https://godoc.org/github.com/apache/arrow/go/arrow/array#RecordReader
 func (c *SpiceClient) Query(ctx context.Context, sql string) (array.RecordReader, error) {
-	return c.query(ctx, c.flightClient, c.appId, c.apiKey, sql)
-}
-
-// internal wrapper for running queries
-func (c *SpiceClient) query(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
 	var rdr array.RecordReader
 	err := backoff.Retry(func() error {
 		var err error
-		rdr, err = queryInternal(ctx, client, appId, apiKey, sql)
+		rdr, err = queryInternal(ctx, c.flightClient, c.appId, c.apiKey, sql)
 		if err != nil {
 			st, ok := status.FromError(err)
 			if ok {
