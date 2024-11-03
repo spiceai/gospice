@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apache/arrow/go/v16/arrow/flight"
+	"github.com/apache/arrow/go/v17/arrow/flight"
 	"github.com/cenkalti/backoff/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

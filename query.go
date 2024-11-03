@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/apache/arrow/go/v16/arrow/array"
-	"github.com/apache/arrow/go/v16/arrow/flight"
+	"github.com/apache/arrow/go/v17/arrow/array"
+	"github.com/apache/arrow/go/v17/arrow/flight"
 	"github.com/cenkalti/backoff/v4"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
