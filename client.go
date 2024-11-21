@@ -204,7 +204,7 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 			grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES),
 		),
 		grpc.WithUnaryInterceptor(FlightHeadersInterceptor(map[string]string{
-			"User-Agent": c.userAgent,
+			"user-agent": c.userAgent,
 		})),
 	}
 
