@@ -95,6 +95,13 @@ func WithHttpAddress(address string) SpiceClientModifier {
 	}
 }
 
+func WithUserAgent(userAgent string) SpiceClientModifier {
+	return func(c *SpiceClient) error {
+		c.userAgent = RemoveNonPrintableASCII(userAgent)
+		return nil
+	}
+}
+
 func WithSpiceCloudAddress() SpiceClientModifier {
 	return func(c *SpiceClient) error {
 		c.flightAddress = defaultCloudConfig.FlightUrl
@@ -197,7 +204,7 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 			grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES),
 		),
 		grpc.WithUnaryInterceptor(FlightHeadersInterceptor(map[string]string{
-			"x-spice-user-agent": c.userAgent,
+			"User-Agent": c.userAgent,
 		})),
 	}
 
