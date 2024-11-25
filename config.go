@@ -69,7 +69,7 @@ func GetSpiceUserAgent() string {
 
 	osVersion := GetOSRelease()
 
-	userAgent := fmt.Sprintf("gospice %s (%s/%s %s)", GO_SPICE_VERSION, osType, osVersion, osMachine)
+	userAgent := fmt.Sprintf("gospice/%s (%s/%s %s)", GO_SPICE_VERSION, osType, osVersion, osMachine)
 
 	// strip any non-printable ASCII characters
 	return RemoveNonPrintableASCII(userAgent)
