@@ -2,7 +2,7 @@
 
 Golang SDK for Spice.ai
 
-See Go Docs at [pkg.go.dev/github.com/spiceai/gospice/v6](https://pkg.go.dev/github.com/spiceai/gospice/v6).
+See Go Docs at [pkg.go.dev/github.com/spiceai/gospice/v7](https://pkg.go.dev/github.com/spiceai/gospice/v7).
 
 For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 
@@ -11,13 +11,13 @@ For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 1. Get the gospice package.
 
 ```go
-go get github.com/spiceai/gospice/v6
+go get github.com/spiceai/gospice/v7
 ```
 
 1. Import the package.
 
 ```go
-import "github.com/spiceai/gospice/v6"
+import "github.com/spiceai/gospice/v7"
 ```
 
 1. Create a SpiceClient passing in your API key. Get your free API key at [spice.ai](https://spice.ai).
@@ -41,7 +41,7 @@ if err := spice.Init(
 1. Execute a query and get back an Apache Arrow Reader.
 
 ```go
-    reader, err := spice.Query(context.Background(), "SELECT * FROM eth.recent_blocks ORDER BY number LIMIT 10")
+    reader, err := spice.Query(context.Background(), "SELECT 1")
     if err != nil {
         panic(fmt.Errorf("error querying: %w", err))
     }
