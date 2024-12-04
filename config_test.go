@@ -19,7 +19,10 @@ func TestUserAgent(t *testing.T) {
 
 func TestPrependedUserAgent(t *testing.T) {
 	client := NewSpiceClient()
-	client.Init(WithUserAgent("my-test-agent/1.0"))
+	err := client.Init(WithUserAgent("my-test-agent/1.0"))
+	if err != nil {
+		t.Errorf("Error initializing client: %s", err)
+	}
 
 	if !strings.HasPrefix(client.userAgent, "my-test-agent/1.0 gospice/") {
 		t.Errorf("User agent string is not in the expected format: %s", client.userAgent)
