@@ -2,7 +2,7 @@ module github.com/spiceai/gospice/v7
 
 go 1.23
 
-toolchain go1.23.2
+toolchain go1.23.3
 
 require (
 	github.com/apache/arrow/go/v17 v17.0.0

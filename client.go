@@ -24,9 +24,11 @@ const (
 var defaultCloudConfig = LoadConfig()
 var defaultLocalConfig = LoadLocalConfig()
 
-// SpiceClient is a client for Spice.ai - Data and AI infrastructure for web3
-// https://spice.ai
-// For documentation visit https://docs.spice.ai/sdks/go-sdk
+// SpiceClient is a client for Spice.ai OSS, a unified SQL query interface and portable runtime to
+// locally materialize, accelerate, and query datasets across databases, data warehouses, and data lakes.
+//
+// https://spiceai.org
+// For documentation visit https://docs.spiceai.org/sdks/golang
 type SpiceClient struct {
 	appId         string
 	apiKey        string
@@ -97,7 +99,8 @@ func WithHttpAddress(address string) SpiceClientModifier {
 
 func WithUserAgent(userAgent string) SpiceClientModifier {
 	return func(c *SpiceClient) error {
-		c.userAgent = RemoveNonPrintableASCII(userAgent)
+		// Prepend the user agent with the user-provided string
+		c.userAgent = RemoveNonPrintableASCII(userAgent) + " " + c.userAgent
 		return nil
 	}
 }
