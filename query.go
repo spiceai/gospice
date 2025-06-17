@@ -17,6 +17,11 @@ import (
 func (c *SpiceClient) Query(ctx context.Context, sql string) (array.RecordReader, error) {
 	var rdr array.RecordReader
 	err := backoff.Retry(func() error {
+		if rdr != nil {
+			rdr.Release()
+			rdr = nil
+		}
+
 		var err error
 		rdr, err = queryInternal(ctx, c.flightClient, c.appId, c.apiKey, sql)
 		if err != nil {
@@ -37,7 +42,12 @@ func (c *SpiceClient) Query(ctx context.Context, sql string) (array.RecordReader
 		}
 		return nil
 	}, backoff.WithMaxRetries(c.backoffPolicy, uint64(c.maxRetries)))
+
 	if err != nil {
+		if rdr != nil {
+			rdr.Release()
+			rdr = nil
+		}
 		return nil, err
 	}
 
@@ -71,8 +81,22 @@ func queryInternal(ctx context.Context, client flight.Client, appId string, apiK
 
 	rdr, err := flight.NewRecordReader(stream)
 	if err != nil {
+		stream.CloseSend()
 		return nil, err
 	}
 
-	return rdr, nil
+	return &cleanupReader{
+		RecordReader: rdr,
+		stream:       stream,
+	}, nil
+}
+
+type cleanupReader struct {
+	array.RecordReader
+	stream flight.FlightService_DoGetClient
+}
+
+func (c *cleanupReader) Release() {
+	c.RecordReader.Release()
+	c.stream.CloseSend()
 }
