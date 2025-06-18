@@ -38,3 +38,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241021214115-324edc3d5d38 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
 )
+
+replace github.com/apache/arrow/go/v17 => github.com/Sevenannn/arrow/go/v17 v17.0.0-20250617235617-2266b4dc1327
