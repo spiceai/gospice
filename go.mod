@@ -39,4 +39,4 @@ require (
 	google.golang.org/protobuf v1.35.1 // indirect
 )
 
-replace github.com/apache/arrow/go/v17 => github.com/Sevenannn/arrow/go/v17 v17.0.0-20250617235617-2266b4dc1327
+replace github.com/apache/arrow/go/v17 => github.com/Sevenannn/arrow/go/v17 v17.0.0-20250618002437-f3fb99fb099c
