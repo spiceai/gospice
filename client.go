@@ -173,12 +173,16 @@ func FlightHeadersInterceptor(headers map[string]string) grpc.UnaryClientInterce
 		// ensure existing headers are retained
 		md, ok := metadata.FromOutgoingContext(ctx)
 		if !ok {
+			// No existing metadata, create new with interceptor headers
 			md = metadata.New(headers)
-		}
+		} else {
+			// clone existing metadata to avoid modifying the original
+			md = md.Copy()
 
-		// add new headers
-		for k, v := range headers {
-			md[k] = append(md[k], v)
+			// add new headers
+			for k, v := range headers {
+				md[k] = append(md[k], v)
+			}
 		}
 
 		ctx = metadata.NewOutgoingContext(ctx, md)
