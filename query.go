@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/apache/arrow/go/v17/arrow/array"
-	"github.com/apache/arrow/go/v17/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/cenkalti/backoff/v4"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// Query executes a query against Spice.ai and returns a Apache Arrow RecordReader
+// Sql executes a SQL query against Spice.ai and returns an Apache Arrow RecordReader
 // For more information on Apache Arrow RecordReader visit https://godoc.org/github.com/apache/arrow/go/arrow/array#RecordReader
-func (c *SpiceClient) Query(ctx context.Context, sql string) (array.RecordReader, error) {
+func (c *SpiceClient) Sql(ctx context.Context, sql string) (array.RecordReader, error) {
 	var rdr array.RecordReader
 	err := backoff.Retry(func() error {
 		var err error
@@ -42,6 +42,12 @@ func (c *SpiceClient) Query(ctx context.Context, sql string) (array.RecordReader
 	}
 
 	return rdr, nil
+}
+
+// Query is deprecated. Use Sql instead.
+// Kept for backward compatibility with v7.
+func (c *SpiceClient) Query(ctx context.Context, sql string) (array.RecordReader, error) {
+	return c.Sql(ctx, sql)
 }
 
 func queryInternal(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
