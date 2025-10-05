@@ -9,7 +9,11 @@ import (
 func TestIsSpiceHealthy(t *testing.T) {
 	t.Run("Local - Health Check", func(t *testing.T) {
 		spice := NewSpiceClient()
-		defer spice.Close()
+		defer func() {
+			if err := spice.Close(); err != nil {
+				t.Logf("warning: failed to close SpiceClient: %v", err)
+			}
+		}()
 
 		if err := spice.Init(); err != nil {
 			t.Fatalf("error initializing SpiceClient: %v", err)
@@ -25,7 +29,11 @@ func TestIsSpiceHealthy(t *testing.T) {
 
 	t.Run("Cloud - Health Check", func(t *testing.T) {
 		spice := NewSpiceClient()
-		defer spice.Close()
+		defer func() {
+			if err := spice.Close(); err != nil {
+				t.Logf("warning: failed to close SpiceClient: %v", err)
+			}
+		}()
 
 		var ApiKey string
 		if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
@@ -48,7 +56,11 @@ func TestIsSpiceHealthy(t *testing.T) {
 func TestIsSpiceReady(t *testing.T) {
 	t.Run("Cloud - Ready Check with API Key", func(t *testing.T) {
 		spice := NewSpiceClient()
-		defer spice.Close()
+		defer func() {
+			if err := spice.Close(); err != nil {
+				t.Logf("warning: failed to close SpiceClient: %v", err)
+			}
+		}()
 
 		var ApiKey string
 		if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
@@ -69,7 +81,11 @@ func TestIsSpiceReady(t *testing.T) {
 
 	t.Run("Cloud - Ready Check without API Key", func(t *testing.T) {
 		spice := NewSpiceClient()
-		defer spice.Close()
+		defer func() {
+			if err := spice.Close(); err != nil {
+				t.Logf("warning: failed to close SpiceClient: %v", err)
+			}
+		}()
 
 		// Initialize without API key
 		if err := spice.Init(WithSpiceCloudAddress()); err != nil {
@@ -88,7 +104,11 @@ func TestIsSpiceReady(t *testing.T) {
 
 	t.Run("Local - Ready Check (No Auth Required)", func(t *testing.T) {
 		spice := NewSpiceClient()
-		defer spice.Close()
+		defer func() {
+			if err := spice.Close(); err != nil {
+				t.Logf("warning: failed to close SpiceClient: %v", err)
+			}
+		}()
 
 		if err := spice.Init(); err != nil {
 			t.Fatalf("error initializing SpiceClient: %v", err)

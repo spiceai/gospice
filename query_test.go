@@ -15,7 +15,11 @@ const (
 // TestCloudBasicQuery tests basic query functionality against Spice Cloud
 func TestCloudBasicQuery(t *testing.T) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			t.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	var ApiKey string
 	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
@@ -57,7 +61,7 @@ func TestCloudBasicQuery(t *testing.T) {
 
 		recordCount := 0
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			defer record.Release()
 			recordCount++
 
@@ -133,7 +137,7 @@ func TestCloudBasicQuery(t *testing.T) {
 		}
 
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			defer record.Release()
 		}
 	})
@@ -157,7 +161,7 @@ func TestCloudBasicQuery(t *testing.T) {
 
 		totalRows := 0
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 
 			// Validate each column type and value
 			for i := 0; i < int(record.NumRows()); i++ {
@@ -251,7 +255,7 @@ func TestCloudBasicQuery(t *testing.T) {
 
 		totalRows := 0
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 
 			// Validate numeric fields are positive and within expected ranges
 			for i := 0; i < int(record.NumRows()); i++ {
@@ -314,7 +318,11 @@ func TestCloudBasicQuery(t *testing.T) {
 // TestLocalBasicQuery tests basic query functionality with local Spice runtime
 func TestLocalBasicQuery(t *testing.T) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			t.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	if err := spice.Init(); err != nil {
 		t.Fatalf("error initializing SpiceClient: %v", err)
@@ -348,7 +356,7 @@ func TestLocalBasicQuery(t *testing.T) {
 
 		recordCount := 0
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			recordCount++
 
 			// Validate data types and values
@@ -395,7 +403,7 @@ func TestLocalBasicQuery(t *testing.T) {
 		}
 
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			record.Release()
 		}
 	})

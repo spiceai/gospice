@@ -7,7 +7,11 @@ import (
 
 func TestLocalRuntimeDatasetRefresh(t *testing.T) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			t.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	if err := spice.Init(WithHttpAddress("http://127.0.0.1:8090")); err != nil {
 		t.Fatalf("error initializing SpiceClient: %v", err)

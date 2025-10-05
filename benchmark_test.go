@@ -11,7 +11,11 @@ import (
 // BenchmarkCloudQuery benchmarks basic query performance against Spice Cloud
 func BenchmarkCloudQuery(b *testing.B) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			b.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	var ApiKey string
 	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
@@ -40,7 +44,7 @@ func BenchmarkCloudQuery(b *testing.B) {
 		}
 
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			record.Release()
 		}
 		reader.Release()
@@ -50,7 +54,11 @@ func BenchmarkCloudQuery(b *testing.B) {
 // BenchmarkCloudQueryWithParams benchmarks parameterized query performance
 func BenchmarkCloudQueryWithParams(b *testing.B) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			b.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	var ApiKey string
 	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
@@ -81,7 +89,7 @@ func BenchmarkCloudQueryWithParams(b *testing.B) {
 		}
 
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			record.Release()
 		}
 		reader.Release()
@@ -91,7 +99,11 @@ func BenchmarkCloudQueryWithParams(b *testing.B) {
 // BenchmarkLocalQuery benchmarks query performance against local Spice runtime
 func BenchmarkLocalQuery(b *testing.B) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			b.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	if err := spice.Init(); err != nil {
 		b.Fatalf("error initializing SpiceClient: %v", err)
@@ -110,7 +122,7 @@ func BenchmarkLocalQuery(b *testing.B) {
 		}
 
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			record.Release()
 		}
 		reader.Release()
@@ -120,7 +132,11 @@ func BenchmarkLocalQuery(b *testing.B) {
 // BenchmarkLocalQueryWithParams benchmarks parameterized query performance locally
 func BenchmarkLocalQueryWithParams(b *testing.B) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			b.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	if err := spice.Init(); err != nil {
 		b.Fatalf("error initializing SpiceClient: %v", err)
@@ -141,7 +157,7 @@ func BenchmarkLocalQueryWithParams(b *testing.B) {
 		}
 
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			record.Release()
 		}
 		reader.Release()
@@ -151,7 +167,11 @@ func BenchmarkLocalQueryWithParams(b *testing.B) {
 // BenchmarkParameterBinding benchmarks parameter binding overhead
 func BenchmarkParameterBinding(b *testing.B) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			b.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	if err := spice.Init(); err != nil {
 		b.Fatalf("error initializing SpiceClient: %v", err)
@@ -188,7 +208,7 @@ func BenchmarkParameterBinding(b *testing.B) {
 				}
 
 				for reader.Next() {
-					record := reader.Record()
+					record := reader.RecordBatch()
 					record.Release()
 				}
 				reader.Release()
@@ -205,7 +225,9 @@ func BenchmarkClientInitialization(b *testing.B) {
 			if err := spice.Init(); err != nil {
 				b.Fatalf("error initializing SpiceClient: %v", err)
 			}
-			spice.Close()
+			if err := spice.Close(); err != nil {
+				b.Logf("warning: failed to close SpiceClient: %v", err)
+			}
 		}
 	})
 
@@ -222,7 +244,9 @@ func BenchmarkClientInitialization(b *testing.B) {
 			if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
 				b.Fatalf("error initializing SpiceClient: %v", err)
 			}
-			spice.Close()
+			if err := spice.Close(); err != nil {
+				b.Logf("warning: failed to close SpiceClient: %v", err)
+			}
 		}
 	})
 }
@@ -230,7 +254,11 @@ func BenchmarkClientInitialization(b *testing.B) {
 // BenchmarkHealthChecks benchmarks health check performance
 func BenchmarkHealthChecks(b *testing.B) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			b.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	if err := spice.Init(); err != nil {
 		b.Fatalf("error initializing SpiceClient: %v", err)
@@ -256,7 +284,11 @@ func BenchmarkHealthChecks(b *testing.B) {
 // BenchmarkRecordProcessing benchmarks different record processing patterns
 func BenchmarkRecordProcessing(b *testing.B) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			b.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	if err := spice.Init(); err != nil {
 		b.Fatalf("error initializing SpiceClient: %v", err)
@@ -276,7 +308,7 @@ func BenchmarkRecordProcessing(b *testing.B) {
 			}
 
 			for reader.Next() {
-				record := reader.Record()
+				record := reader.RecordBatch()
 				record.Release()
 			}
 			reader.Release()
@@ -293,7 +325,7 @@ func BenchmarkRecordProcessing(b *testing.B) {
 
 			var sum float64
 			for reader.Next() {
-				record := reader.Record()
+				record := reader.RecordBatch()
 				col := record.Column(0)
 				for j := 0; j < int(record.NumRows()); j++ {
 					if !col.IsNull(j) {

@@ -3,6 +3,7 @@ package gospice
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/apache/arrow-adbc/go/adbc"
@@ -63,7 +64,9 @@ func (c *SpiceClient) initADBC() error {
 	// Create connection
 	conn, err := db.Open(context.Background())
 	if err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			return fmt.Errorf("error opening ADBC connection: %w (failed to close database: %v)", err, closeErr)
+		}
 		return fmt.Errorf("error opening ADBC connection: %w", err)
 	}
 
@@ -157,7 +160,12 @@ func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, param
 	if err != nil {
 		return nil, fmt.Errorf("error creating statement: %w", err)
 	}
-	defer stmt.Close()
+	defer func() {
+		if closeErr := stmt.Close(); closeErr != nil {
+			// Log error but don't fail the function since we're in a defer
+			log.Printf("warning: failed to close ADBC statement: %v", closeErr)
+		}
+	}()
 
 	// Set the query
 	if err := stmt.SetSqlQuery(sql); err != nil {
@@ -220,7 +228,7 @@ func (c *SpiceClient) bindParameters(stmt adbc.Statement, params ...interface{})
 	}
 
 	// Build the record
-	rec := bldr.NewRecord()
+	rec := bldr.NewRecordBatch()
 	defer rec.Release()
 
 	// Bind the record to the statement

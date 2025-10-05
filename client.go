@@ -276,7 +276,9 @@ func (c *SpiceClient) IsSpiceHealthy(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() // Ignore close errors in health check
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return false
@@ -313,7 +315,9 @@ func (c *SpiceClient) IsSpiceReady(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() // Ignore close errors in ready check
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return false

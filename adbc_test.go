@@ -11,7 +11,11 @@ import (
 // TestADBCCloudBasicQuery tests basic ADBC query functionality against Spice Cloud
 func TestADBCCloudBasicQuery(t *testing.T) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			t.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	var ApiKey string
 	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
@@ -46,7 +50,7 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 		}
 
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			defer record.Release()
 
 			if record.NumRows() == 0 {
@@ -76,7 +80,7 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 
 		recordCount := 0
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			recordCount++
 
 			// Validate c_custkey > 100
@@ -144,7 +148,7 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 
 		recordCount := 0
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			recordCount++
 
 			// Validate all parameter conditions
@@ -207,7 +211,11 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 // TestADBCLocalParameterizedQuery tests parameterized query functionality with local runtime
 func TestADBCLocalParameterizedQuery(t *testing.T) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			t.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	if err := spice.Init(); err != nil {
 		t.Fatalf("error initializing SpiceClient: %v", err)
@@ -237,7 +245,7 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 
 		recordCount := 0
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			recordCount++
 
 			// Validate trip_distance is > 10.0
@@ -284,7 +292,7 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 
 		recordCount := 0
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			recordCount++
 
 			// Validate both parameters
@@ -344,7 +352,7 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 
 		recordCount := 0
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			recordCount++
 
 			// Validate payment_type matches the parameter
@@ -371,7 +379,11 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 // TestADBCLocalBasicQuery tests basic ADBC query functionality with local Spice runtime
 func TestADBCLocalBasicQuery(t *testing.T) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			t.Logf("warning: failed to close SpiceClient: %v", err)
+		}
+	}()
 
 	if err := spice.Init(); err != nil {
 		t.Fatalf("error initializing SpiceClient: %v", err)
@@ -401,7 +413,7 @@ func TestADBCLocalBasicQuery(t *testing.T) {
 
 		recordCount := 0
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			recordCount++
 
 			// Validate trip_distance is positive
@@ -443,7 +455,7 @@ func TestADBCLocalBasicQuery(t *testing.T) {
 		}
 
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			record.Release()
 		}
 	})

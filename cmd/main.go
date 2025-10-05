@@ -9,7 +9,11 @@ import (
 
 func querySpiceCloud() {
 	spice := gospice.NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			fmt.Printf("warning: failed to close SpiceClient: %v\n", err)
+		}
+	}()
 
 	if err := spice.Init(
 		gospice.WithApiKey("3437|89d6b41cd0034cd68eea704f5e88779d"),
@@ -25,7 +29,7 @@ func querySpiceCloud() {
 	defer reader.Release()
 
 	for reader.Next() {
-		record := reader.Record()
+		record := reader.RecordBatch()
 		defer record.Release()
 		fmt.Println(record)
 	}
@@ -33,7 +37,11 @@ func querySpiceCloud() {
 
 func querySpiceCloudWithParams() {
 	spice := gospice.NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			fmt.Printf("warning: failed to close SpiceClient: %v\n", err)
+		}
+	}()
 
 	if err := spice.Init(
 		gospice.WithApiKey("3437|89d6b41cd0034cd68eea704f5e88779d"),
@@ -56,7 +64,7 @@ func querySpiceCloudWithParams() {
 
 	fmt.Println("TPC-H customers with customer key >", minCustKey)
 	for reader.Next() {
-		record := reader.Record()
+		record := reader.RecordBatch()
 		defer record.Release()
 		fmt.Println(record)
 	}
@@ -64,7 +72,11 @@ func querySpiceCloudWithParams() {
 
 func querySpiceLocal() {
 	spice := gospice.NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			fmt.Printf("warning: failed to close SpiceClient: %v\n", err)
+		}
+	}()
 
 	if err := spice.Init(); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
@@ -77,7 +89,7 @@ func querySpiceLocal() {
 	defer reader.Release()
 
 	for reader.Next() {
-		record := reader.Record()
+		record := reader.RecordBatch()
 		defer record.Release()
 		fmt.Println(record)
 	}
@@ -85,7 +97,11 @@ func querySpiceLocal() {
 
 func querySpiceLocalWithParams() {
 	spice := gospice.NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			fmt.Printf("warning: failed to close SpiceClient: %v\n", err)
+		}
+	}()
 
 	if err := spice.Init(); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
@@ -107,7 +123,7 @@ func querySpiceLocalWithParams() {
 
 	fmt.Printf("Taxi trips with distance > %.1f and fare > $%.2f\n", minDistance, minFare)
 	for reader.Next() {
-		record := reader.Record()
+		record := reader.RecordBatch()
 		defer record.Release()
 		fmt.Println(record)
 	}
@@ -116,7 +132,11 @@ func querySpiceLocalWithParams() {
 // Test refreshing a local spiced dataset.
 func localDatasetRefresh() {
 	spice := gospice.NewSpiceClient()
-	defer spice.Close()
+	defer func() {
+		if err := spice.Close(); err != nil {
+			fmt.Printf("warning: failed to close SpiceClient: %v\n", err)
+		}
+	}()
 
 	if err := spice.Init(
 		gospice.WithHttpAddress("http://127.0.0.1:8090"),

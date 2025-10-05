@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 )
 
@@ -45,7 +46,12 @@ func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, opts *
 	if err != nil {
 		return fmt.Errorf("error executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			// Log error but don't fail the function
+			log.Printf("warning: failed to close response body: %v", closeErr)
+		}
+	}()
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("POST %s failed with status=%d. body=%v", url, resp.StatusCode, body)
 	}
