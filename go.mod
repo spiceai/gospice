@@ -1,6 +1,6 @@
 module github.com/spiceai/gospice/v8
 
-go 1.25.1
+go 1.24.0
 
 require (
 	github.com/apache/arrow-adbc/go/adbc v1.8.0
