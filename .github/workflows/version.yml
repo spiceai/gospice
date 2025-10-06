@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v5
 
       - name: Check if tag exists
         id: check-tag
@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v5
 
       - name: Create and push tag
         run: |
