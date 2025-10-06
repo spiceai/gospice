@@ -179,13 +179,9 @@ func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, param
 		return nil, fmt.Errorf("error setting SQL query: %w", err)
 	}
 
-	// If we have parameters, prepare the statement and bind them
+	// If we have parameters, bind them
+	// Note: We skip the Prepare() call as it's only an optimization and not supported by all servers
 	if len(params) > 0 {
-		// Prepare the statement before binding parameters
-		if err := stmt.Prepare(ctx); err != nil {
-			return nil, fmt.Errorf("error preparing statement: %w", err)
-		}
-
 		// Bind parameters
 		if err := c.bindParameters(stmt, params...); err != nil {
 			return nil, fmt.Errorf("error binding parameters: %w", err)
