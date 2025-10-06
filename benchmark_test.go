@@ -51,8 +51,8 @@ func BenchmarkCloudQuery(b *testing.B) {
 	}
 }
 
-// BenchmarkCloudQueryWithParams benchmarks parameterized query performance
-func BenchmarkCloudQueryWithParams(b *testing.B) {
+// BenchmarkCloudSqlWithParams benchmarks parameterized query performance
+func BenchmarkCloudSqlWithParams(b *testing.B) {
 	spice := NewSpiceClient()
 	defer func() {
 		if err := spice.Close(); err != nil {
@@ -129,8 +129,8 @@ func BenchmarkLocalQuery(b *testing.B) {
 	}
 }
 
-// BenchmarkLocalQueryWithParams benchmarks parameterized query performance locally
-func BenchmarkLocalQueryWithParams(b *testing.B) {
+// BenchmarkLocalSqlWithParams benchmarks parameterized query performance locally
+func BenchmarkLocalSqlWithParams(b *testing.B) {
 	spice := NewSpiceClient()
 	defer func() {
 		if err := spice.Close(); err != nil {

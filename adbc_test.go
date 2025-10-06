@@ -38,7 +38,7 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 	}
 
 	t.Run("Cloud - Simple ADBC Query", func(t *testing.T) {
-		reader, err := spice.QueryWithParams(context.Background(), "SELECT 1 as number")
+		reader, err := spice.SqlWithParams(context.Background(), "SELECT 1 as number")
 		if err != nil {
 			t.Skipf("Skipping - error querying: %v", err)
 		}
@@ -229,7 +229,7 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 
 	t.Run("Local - Parameterized Query with Float", func(t *testing.T) {
 		sql := "SELECT trip_distance, fare_amount FROM taxi_trips WHERE trip_distance > $1 ORDER BY trip_distance LIMIT 5"
-		reader, err := spice.QueryWithParams(context.Background(), sql, 10.0)
+		reader, err := spice.SqlWithParams(context.Background(), sql, 10.0)
 		if err != nil {
 			t.Skipf("Skipping - requires local spice runtime with taxi_trips dataset: %v", err)
 		}
@@ -276,7 +276,7 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 
 	t.Run("Local - Parameterized Query with Multiple Parameters", func(t *testing.T) {
 		sql := "SELECT trip_distance, fare_amount, payment_type FROM taxi_trips WHERE trip_distance > $1 AND fare_amount > $2 ORDER BY trip_distance, fare_amount LIMIT 3"
-		reader, err := spice.QueryWithParams(context.Background(), sql, 5.0, 20.0)
+		reader, err := spice.SqlWithParams(context.Background(), sql, 5.0, 20.0)
 		if err != nil {
 			t.Skipf("Skipping - requires local spice runtime with taxi_trips dataset: %v", err)
 		}
@@ -339,7 +339,7 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 
 	t.Run("Local - Parameterized Query with String", func(t *testing.T) {
 		sql := "SELECT trip_distance, fare_amount, payment_type FROM taxi_trips WHERE payment_type = $1 ORDER BY trip_distance LIMIT 5"
-		reader, err := spice.QueryWithParams(context.Background(), sql, "Credit Card")
+		reader, err := spice.SqlWithParams(context.Background(), sql, "Credit Card")
 		if err != nil {
 			t.Skipf("Skipping - requires local spice runtime with taxi_trips dataset: %v", err)
 		}
@@ -396,7 +396,7 @@ func TestADBCLocalBasicQuery(t *testing.T) {
 	}
 
 	t.Run("Local - Query Dataset with ADBC", func(t *testing.T) {
-		reader, err := spice.QueryWithParams(context.Background(),
+		reader, err := spice.SqlWithParams(context.Background(),
 			"SELECT trip_distance, fare_amount FROM taxi_trips WHERE trip_distance > 0 ORDER BY trip_distance LIMIT 3")
 		if err != nil {
 			t.Skipf("Skipping - requires local spice runtime with taxi_trips dataset: %v", err)
@@ -443,7 +443,7 @@ func TestADBCLocalBasicQuery(t *testing.T) {
 	})
 
 	t.Run("Local - Simple SELECT 1", func(t *testing.T) {
-		reader, err := spice.QueryWithParams(context.Background(), "SELECT 1 as num")
+		reader, err := spice.SqlWithParams(context.Background(), "SELECT 1 as num")
 		if err != nil {
 			t.Skipf("Skipping - requires local spice runtime: %v", err)
 		}

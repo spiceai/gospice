@@ -52,7 +52,7 @@ func querySpiceCloudWithParams() {
 
 	// Using parameterized query (recommended for queries with parameters)
 	minCustKey := int64(100)
-	reader, err := spice.QueryWithParams(
+	reader, err := spice.SqlWithParams(
 		context.Background(),
 		"SELECT * FROM tpch.customer WHERE c_custkey > $1 ORDER BY c_custkey LIMIT 10",
 		minCustKey,
@@ -110,7 +110,7 @@ func querySpiceLocalWithParams() {
 	// Using parameterized query for filtering
 	minDistance := 5.0
 	minFare := 20.0
-	reader, err := spice.QueryWithParams(
+	reader, err := spice.SqlWithParams(
 		context.Background(),
 		"SELECT * FROM taxi_trips WHERE trip_distance > $1 AND fare_amount > $2 LIMIT 10",
 		minDistance,

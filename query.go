@@ -77,6 +77,10 @@ func queryInternal(ctx context.Context, client flight.Client, appId string, apiK
 
 	rdr, err := flight.NewRecordReader(stream)
 	if err != nil {
+		// Ensure stream is closed if reader creation fails
+		if closeErr := stream.CloseSend(); closeErr != nil {
+			return nil, fmt.Errorf("error creating record reader: %w (failed to close stream: %v)", err, closeErr)
+		}
 		return nil, err
 	}
 

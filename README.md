@@ -64,7 +64,7 @@ gospice v8 supports parameterized queries using ADBC (Arrow Database Connectivit
 
 ```go
 // Query with a single parameter
-reader, err := spice.QueryWithParams(
+reader, err := spice.SqlWithParams(
     context.Background(),
     "SELECT * FROM tpch.customer WHERE c_custkey > $1 LIMIT 10",
     100,
@@ -84,7 +84,7 @@ for reader.Next() {
 Query with multiple parameters:
 
 ```go
-reader, err := spice.QueryWithParams(
+reader, err := spice.SqlWithParams(
     context.Background(),
     "SELECT * FROM taxi_trips WHERE trip_distance > $1 AND fare_amount > $2 LIMIT 100",
     5.0,
@@ -96,13 +96,48 @@ if err != nil {
 defer reader.Release()
 ```
 
-Supported parameter types:
+**Supported parameter types with automatic type inference:**
 
 - Integers: `int`, `int8`, `int16`, `int32`, `int64`, `uint`, `uint8`, `uint16`, `uint32`, `uint64`
 - Floating point: `float32`, `float64`
 - String: `string`
 - Boolean: `bool`
 - Binary: `[]byte`
+- Null values: `nil`
+
+**Typed Parameters for Advanced Use Cases:**
+
+For precise control over Arrow types, use typed parameter constructors:
+
+```go
+import "github.com/spiceai/gospice/v8"
+
+// Explicit type control for complex scenarios
+reader, err := spice.SqlWithParams(
+    ctx,
+    "SELECT * FROM data WHERE id = $1 AND amount = $2 AND active = $3",
+    gospice.Int64Param(12345),           // Explicitly int64
+    gospice.Decimal128Param(...),        // Decimal with precision
+    gospice.BoolParam(true),             // Explicitly boolean
+)
+```
+
+Available typed parameter constructors:
+
+- **Integers**: `Int8Param`, `Int16Param`, `Int32Param`, `Int64Param`, `Uint8Param`, `Uint16Param`, `Uint32Param`, `Uint64Param`
+- **Floating point**: `Float16Param`, `Float32Param`, `Float64Param`
+- **Strings**: `StringParam`, `LargeStringParam`
+- **Binary**: `BinaryParam`, `LargeBinaryParam`, `FixedSizeBinaryParam`
+- **Boolean**: `BoolParam`
+- **Date/Time**: `Date32Param`, `Date64Param`, `Time32Param`, `Time64Param`, `TimestampParam`, `DurationParam`
+- **Intervals**: `MonthIntervalParam`, `DayTimeIntervalParam`, `MonthDayNanoIntervalParam`
+- **Decimals**: `Decimal128Param`, `Decimal256Param`
+- **Null**: `NullParam`
+
+Or use the generic constructors:
+
+- `NewParam(value)` - Creates a parameter with automatic type inference
+- `NewTypedParam(value, arrowType)` - Creates a parameter with explicit Arrow type
 
 ### Using local spice runtime
 

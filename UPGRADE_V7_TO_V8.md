@@ -6,7 +6,7 @@ gospice v8 is a major version update that introduces:
 
 - New cleaner API with `Sql()` and `SqlWithParams()` methods
 - Health check methods `IsSpiceHealthy()` and `IsSpiceReady()`
-- Upgraded to Apache Arrow v18 and Go 1.24
+- Upgraded to Apache Arrow v18 and Go 1.25
 
 **Good news:** v8 is fully backward compatible with v7. Your existing `Query()` and `QueryWithParams()` calls will continue to work!
 
@@ -72,13 +72,30 @@ reader, err := spice.SqlWithParams(ctx, "SELECT * FROM users WHERE id = $1", use
 - Better alignment with SQL standard naming
 - Your old code continues to work - `Query()` and `QueryWithParams()` are maintained for backward compatibility
 
-**Supported parameter types:**
+**Automatic type inference for common Go types:**
 
-- Integers: `int32`, `int64`, `uint32`, `uint64`
-- Floats: `float32`, `float64`
+- Integers: `int`, `int8`, `int16`, `int32`, `int64`, `uint`, `uint8`, `uint16`, `uint32`, `uint64`
+- Floating point: `float32`, `float64`
 - String: `string`
 - Boolean: `bool`
 - Binary: `[]byte`
+- Null values: `nil`
+
+**Typed parameters for advanced use cases:**
+
+v8 introduces typed parameter constructors for precise control over Arrow types:
+
+```go
+// Example: Using typed parameters for decimal and timestamp
+reader, err := spice.SqlWithParams(
+    ctx,
+    "SELECT * FROM trades WHERE price >= $1 AND trade_time > $2",
+    gospice.Decimal128Param(priceBytes, 19, 4),
+    gospice.TimestampParam(timestamp, arrow.Microsecond, "UTC"),
+)
+```
+
+See `params.go` for the complete list of typed constructors including `Int64Param`, `Float64Param`, `StringParam`, `TimestampParam`, `Decimal128Param`, and many more.
 
 ### 2. Health Check Methods
 

@@ -10,6 +10,9 @@ import (
 	"github.com/apache/arrow-adbc/go/adbc/driver/flightsql"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/decimal128"
+	"github.com/apache/arrow-go/v18/arrow/decimal256"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/cenkalti/backoff/v4"
 	"google.golang.org/grpc/codes"
@@ -106,7 +109,17 @@ func (c *SpiceClient) closeADBC() error {
 // SqlWithParams executes a parameterized SQL query against Spice.ai and returns an Apache Arrow RecordReader
 // This is the recommended method for querying with parameters to prevent SQL injection
 // Parameters should use positional placeholders (e.g., $1, $2) in the SQL query
-func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...interface{}) (array.RecordReader, error) {
+//
+// Parameters can be:
+// - Simple Go values (int, string, bool, etc.) - type will be inferred
+// - Param structs with explicit type annotation using NewTypedParam() or helper functions
+// - Arrow types (arrow.Date32, arrow.Timestamp, etc.)
+//
+// Example:
+//
+//	reader, err := client.SqlWithParams(ctx, "SELECT * FROM table WHERE id = $1 AND name = $2", 123, "test")
+//	reader, err := client.SqlWithParams(ctx, "SELECT * FROM table WHERE ts = $1", TimestampParam(ts, arrow.Microsecond, "UTC"))
+func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...any) (array.RecordReader, error) {
 	if c.adbcClient == nil {
 		// Try lazy initialization
 		if err := c.initADBC(); err != nil {
@@ -143,14 +156,8 @@ func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...i
 	return rdr, nil
 }
 
-// QueryWithParams is deprecated. Use SqlWithParams instead.
-// Kept for backward compatibility with v7.
-func (c *SpiceClient) QueryWithParams(ctx context.Context, sql string, params ...interface{}) (array.RecordReader, error) {
-	return c.SqlWithParams(ctx, sql, params...)
-}
-
 // queryADBCWithParams executes a parameterized query using ADBC
-func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, params ...interface{}) (array.RecordReader, error) {
+func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, params ...any) (array.RecordReader, error) {
 	if c.adbcClient == nil || c.adbcClient.conn == nil {
 		return nil, fmt.Errorf("ADBC connection is not initialized")
 	}
@@ -195,21 +202,46 @@ func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, param
 }
 
 // bindParameters binds parameters to an ADBC statement
-func (c *SpiceClient) bindParameters(stmt adbc.Statement, params ...interface{}) error {
+func (c *SpiceClient) bindParameters(stmt adbc.Statement, params ...any) error {
 	if len(params) == 0 {
 		return nil
 	}
 
+	// Extract values and types from parameters
+	values := make([]any, len(params))
+	types := make([]arrow.DataType, len(params))
+
+	for i, param := range params {
+		// Check if this is a Param struct with explicit type
+		if p, ok := param.(Param); ok {
+			values[i] = p.Value
+			if p.Type != nil {
+				types[i] = p.Type
+			} else {
+				// Infer type from value
+				dataType, err := inferArrowType(p.Value)
+				if err != nil {
+					return fmt.Errorf("error inferring type for parameter %d: %w", i, err)
+				}
+				types[i] = dataType
+			}
+		} else {
+			// Regular value, infer type
+			values[i] = param
+			dataType, err := inferArrowType(param)
+			if err != nil {
+				return fmt.Errorf("error inferring type for parameter %d: %w", i, err)
+			}
+			types[i] = dataType
+		}
+	}
+
 	// Build Arrow schema and record for parameters
 	fields := make([]arrow.Field, len(params))
-	for i, param := range params {
-		dataType, err := inferArrowType(param)
-		if err != nil {
-			return fmt.Errorf("error inferring type for parameter %d: %w", i, err)
-		}
+	for i := range params {
 		fields[i] = arrow.Field{
 			Name: fmt.Sprintf("$%d", i+1),
-			Type: dataType,
+			Type: types[i],
 		}
 	}
 
@@ -221,8 +253,8 @@ func (c *SpiceClient) bindParameters(stmt adbc.Statement, params ...interface{})
 	defer bldr.Release()
 
 	// Add values to the builders
-	for i, param := range params {
-		if err := appendValueToBuilder(bldr.Field(i), param); err != nil {
+	for i, value := range values {
+		if err := appendValueToBuilder(bldr.Field(i), value); err != nil {
 			return fmt.Errorf("error appending parameter %d: %w", i, err)
 		}
 	}
@@ -240,78 +272,157 @@ func (c *SpiceClient) bindParameters(stmt adbc.Statement, params ...interface{})
 }
 
 // inferArrowType infers the Arrow data type from a Go value
-func inferArrowType(val interface{}) (arrow.DataType, error) {
-	switch val.(type) {
-	case int, int8, int16, int32:
+func inferArrowType(val any) (arrow.DataType, error) {
+	switch v := val.(type) {
+	// Integer types
+	case int8:
+		return arrow.PrimitiveTypes.Int8, nil
+	case int16:
+		return arrow.PrimitiveTypes.Int16, nil
+	case int32:
 		return arrow.PrimitiveTypes.Int32, nil
 	case int64:
 		return arrow.PrimitiveTypes.Int64, nil
-	case uint, uint8, uint16, uint32:
+	case int:
+		// int is platform-dependent, use int64 for safety
+		return arrow.PrimitiveTypes.Int64, nil
+	case uint8:
+		return arrow.PrimitiveTypes.Uint8, nil
+	case uint16:
+		return arrow.PrimitiveTypes.Uint16, nil
+	case uint32:
 		return arrow.PrimitiveTypes.Uint32, nil
 	case uint64:
 		return arrow.PrimitiveTypes.Uint64, nil
+	case uint:
+		// uint is platform-dependent, use uint64 for safety
+		return arrow.PrimitiveTypes.Uint64, nil
+
+	// Floating point types
 	case float32:
 		return arrow.PrimitiveTypes.Float32, nil
 	case float64:
 		return arrow.PrimitiveTypes.Float64, nil
+
+	// String and binary types
 	case string:
 		return arrow.BinaryTypes.String, nil
 	case bool:
 		return arrow.FixedWidthTypes.Boolean, nil
 	case []byte:
 		return arrow.BinaryTypes.Binary, nil
+
+	// Temporal types
+	case arrow.Date32:
+		return arrow.PrimitiveTypes.Date32, nil
+	case arrow.Date64:
+		return arrow.PrimitiveTypes.Date64, nil
+	case arrow.Time32:
+		// Default to milliseconds if not specified
+		return arrow.FixedWidthTypes.Time32ms, nil
+	case arrow.Time64:
+		// Default to microseconds if not specified
+		return arrow.FixedWidthTypes.Time64us, nil
+	case arrow.Timestamp:
+		// Default to microseconds with UTC if not specified
+		return arrow.FixedWidthTypes.Timestamp_us, nil
+	case arrow.Duration:
+		// Default to microseconds if not specified
+		return arrow.FixedWidthTypes.Duration_us, nil
+
+	// Interval types
+	case arrow.MonthInterval:
+		return arrow.FixedWidthTypes.MonthInterval, nil
+	case arrow.DayTimeInterval:
+		return arrow.FixedWidthTypes.DayTimeInterval, nil
+	case arrow.MonthDayNanoInterval:
+		return arrow.FixedWidthTypes.MonthDayNanoInterval, nil
+
+	// Fixed-size types
+	case [16]byte:
+		// Decimal128 - default precision/scale (38, 10)
+		return &arrow.Decimal128Type{Precision: 38, Scale: 10}, nil
+	case [32]byte:
+		// Decimal256 - default precision/scale (76, 10)
+		return &arrow.Decimal256Type{Precision: 76, Scale: 10}, nil
+
 	case nil:
 		return arrow.Null, nil
 	default:
-		return nil, fmt.Errorf("unsupported parameter type: %T", val)
+		return nil, fmt.Errorf("unsupported parameter type: %T (use NewTypedParam for explicit type control)", v)
 	}
 }
 
 // appendValueToBuilder appends a value to an Arrow array builder
-func appendValueToBuilder(builder array.Builder, val interface{}) error {
+func appendValueToBuilder(builder array.Builder, val any) error {
 	if val == nil {
 		builder.AppendNull()
 		return nil
 	}
 
 	switch b := builder.(type) {
-	case *array.Int32Builder:
-		switch v := val.(type) {
-		case int:
-			b.Append(int32(v))
-		case int8:
-			b.Append(int32(v))
-		case int16:
-			b.Append(int32(v))
-		case int32:
+	// Integer builders
+	case *array.Int8Builder:
+		if v, ok := val.(int8); ok {
 			b.Append(v)
-		default:
+		} else {
+			return fmt.Errorf("cannot convert %T to int8", val)
+		}
+	case *array.Int16Builder:
+		if v, ok := val.(int16); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to int16", val)
+		}
+	case *array.Int32Builder:
+		if v, ok := val.(int32); ok {
+			b.Append(v)
+		} else {
 			return fmt.Errorf("cannot convert %T to int32", val)
 		}
 	case *array.Int64Builder:
-		if v, ok := val.(int64); ok {
+		switch v := val.(type) {
+		case int64:
 			b.Append(v)
-		} else {
+		case int:
+			b.Append(int64(v))
+		default:
 			return fmt.Errorf("cannot convert %T to int64", val)
 		}
-	case *array.Uint32Builder:
-		switch v := val.(type) {
-		case uint:
-			b.Append(uint32(v))
-		case uint8:
-			b.Append(uint32(v))
-		case uint16:
-			b.Append(uint32(v))
-		case uint32:
+	case *array.Uint8Builder:
+		if v, ok := val.(uint8); ok {
 			b.Append(v)
-		default:
+		} else {
+			return fmt.Errorf("cannot convert %T to uint8", val)
+		}
+	case *array.Uint16Builder:
+		if v, ok := val.(uint16); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to uint16", val)
+		}
+	case *array.Uint32Builder:
+		if v, ok := val.(uint32); ok {
+			b.Append(v)
+		} else {
 			return fmt.Errorf("cannot convert %T to uint32", val)
 		}
 	case *array.Uint64Builder:
-		if v, ok := val.(uint64); ok {
+		switch v := val.(type) {
+		case uint64:
 			b.Append(v)
-		} else {
+		case uint:
+			b.Append(uint64(v))
+		default:
 			return fmt.Errorf("cannot convert %T to uint64", val)
+		}
+
+	// Floating point builders
+	case *array.Float16Builder:
+		if v, ok := val.(uint16); ok {
+			b.Append(float16.New(float32(v)))
+		} else {
+			return fmt.Errorf("cannot convert %T to float16", val)
 		}
 	case *array.Float32Builder:
 		if v, ok := val.(float32); ok {
@@ -325,11 +436,19 @@ func appendValueToBuilder(builder array.Builder, val interface{}) error {
 		} else {
 			return fmt.Errorf("cannot convert %T to float64", val)
 		}
+
+	// String and binary builders
 	case *array.StringBuilder:
 		if v, ok := val.(string); ok {
 			b.Append(v)
 		} else {
 			return fmt.Errorf("cannot convert %T to string", val)
+		}
+	case *array.LargeStringBuilder:
+		if v, ok := val.(string); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to large string", val)
 		}
 	case *array.BooleanBuilder:
 		if v, ok := val.(bool); ok {
@@ -343,6 +462,103 @@ func appendValueToBuilder(builder array.Builder, val interface{}) error {
 		} else {
 			return fmt.Errorf("cannot convert %T to []byte", val)
 		}
+	case *array.FixedSizeBinaryBuilder:
+		if v, ok := val.([]byte); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to fixed size binary", val)
+		}
+
+	// Temporal builders
+	case *array.Date32Builder:
+		if v, ok := val.(arrow.Date32); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to arrow.Date32", val)
+		}
+	case *array.Date64Builder:
+		if v, ok := val.(arrow.Date64); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to arrow.Date64", val)
+		}
+	case *array.Time32Builder:
+		if v, ok := val.(arrow.Time32); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to arrow.Time32", val)
+		}
+	case *array.Time64Builder:
+		if v, ok := val.(arrow.Time64); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to arrow.Time64", val)
+		}
+	case *array.TimestampBuilder:
+		if v, ok := val.(arrow.Timestamp); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to arrow.Timestamp", val)
+		}
+	case *array.DurationBuilder:
+		if v, ok := val.(arrow.Duration); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to arrow.Duration", val)
+		}
+
+	// Interval builders
+	case *array.MonthIntervalBuilder:
+		if v, ok := val.(arrow.MonthInterval); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to arrow.MonthInterval", val)
+		}
+	case *array.DayTimeIntervalBuilder:
+		if v, ok := val.(arrow.DayTimeInterval); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to arrow.DayTimeInterval", val)
+		}
+	case *array.MonthDayNanoIntervalBuilder:
+		if v, ok := val.(arrow.MonthDayNanoInterval); ok {
+			b.Append(v)
+		} else {
+			return fmt.Errorf("cannot convert %T to arrow.MonthDayNanoInterval", val)
+		}
+
+	// Decimal builders
+	case *array.Decimal128Builder:
+		if v, ok := val.([16]byte); ok {
+			// Convert byte array to decimal128.Num
+			// Interpret as big-endian signed integer
+			hi := int64(uint64(v[0])<<56 | uint64(v[1])<<48 | uint64(v[2])<<40 | uint64(v[3])<<32 |
+				uint64(v[4])<<24 | uint64(v[5])<<16 | uint64(v[6])<<8 | uint64(v[7]))
+			lo := uint64(v[8])<<56 | uint64(v[9])<<48 | uint64(v[10])<<40 | uint64(v[11])<<32 |
+				uint64(v[12])<<24 | uint64(v[13])<<16 | uint64(v[14])<<8 | uint64(v[15])
+			dec := decimal128.New(hi, lo)
+			b.Append(dec)
+		} else {
+			return fmt.Errorf("cannot convert %T to decimal128", val)
+		}
+	case *array.Decimal256Builder:
+		if v, ok := val.([32]byte); ok {
+			// Convert byte array to decimal256.Num
+			// Extract 4 64-bit little-endian values
+			w0 := uint64(v[0]) | uint64(v[1])<<8 | uint64(v[2])<<16 | uint64(v[3])<<24 |
+				uint64(v[4])<<32 | uint64(v[5])<<40 | uint64(v[6])<<48 | uint64(v[7])<<56
+			w1 := uint64(v[8]) | uint64(v[9])<<8 | uint64(v[10])<<16 | uint64(v[11])<<24 |
+				uint64(v[12])<<32 | uint64(v[13])<<40 | uint64(v[14])<<48 | uint64(v[15])<<56
+			w2 := uint64(v[16]) | uint64(v[17])<<8 | uint64(v[18])<<16 | uint64(v[19])<<24 |
+				uint64(v[20])<<32 | uint64(v[21])<<40 | uint64(v[22])<<48 | uint64(v[23])<<56
+			w3 := uint64(v[24]) | uint64(v[25])<<8 | uint64(v[26])<<16 | uint64(v[27])<<24 |
+				uint64(v[28])<<32 | uint64(v[29])<<40 | uint64(v[30])<<48 | uint64(v[31])<<56
+			dec := decimal256.New(w0, w1, w2, w3)
+			b.Append(dec)
+		} else {
+			return fmt.Errorf("cannot convert %T to decimal256", val)
+		}
+
 	default:
 		return fmt.Errorf("unsupported builder type: %T", builder)
 	}
