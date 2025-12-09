@@ -2,6 +2,8 @@ module github.com/spiceai/gospice/v8
 
 go 1.24.0
 
+toolchain go1.24.4
+
 require (
 	github.com/apache/arrow-adbc/go/adbc v1.8.0
 	github.com/apache/arrow-go/v18 v18.4.1

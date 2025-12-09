@@ -10,19 +10,20 @@ on:
 
 jobs:
   build:
-    name: Build and test ${{matrix.os}}
+    name: Build and test ${{matrix.os}} go${{matrix.go-version}}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.24', '1.25']
     steps:
       - uses: actions/checkout@v5
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '^1.24'
+          go-version: ${{ matrix.go-version }}
 
       - name: Vet
         run: go vet -v ./...
