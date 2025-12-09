@@ -5,7 +5,7 @@ go 1.23
 toolchain go1.23.3
 
 require (
-	github.com/apache/arrow/go/v17 v17.0.0
+	github.com/apache/arrow-go/v18 v18.0.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	go.opentelemetry.io/otel/trace v1.31.0
 	google.golang.org/grpc v1.67.1
