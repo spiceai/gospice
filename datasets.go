@@ -23,9 +23,15 @@ type DatasetRefreshRequest struct {
 }
 
 func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, opts *DatasetRefreshRequest) error {
-	jsonData, err := json.Marshal(opts)
-	if err != nil {
-		return fmt.Errorf("error marshaling DatasetRefreshRequest opts: %w", err)
+	var jsonData []byte
+	var err error
+	if opts == nil {
+		jsonData = []byte("{}")
+	} else {
+		jsonData, err = json.Marshal(opts)
+		if err != nil {
+			return fmt.Errorf("error marshaling DatasetRefreshRequest opts: %w", err)
+		}
 	}
 
 	body := bytes.NewBuffer(jsonData)
