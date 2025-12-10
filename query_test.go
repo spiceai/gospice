@@ -17,7 +17,7 @@ const (
 // Execute a basic query and check for columns and rows
 func TestBasicQuery(t *testing.T) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() { _ = spice.Close() }()
 
 	var ApiKey string
 	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
@@ -89,7 +89,7 @@ func TestBasicQuery(t *testing.T) {
 
 func TestLocalRuntime(t *testing.T) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() { _ = spice.Close() }()
 
 	if err := spice.Init(); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))

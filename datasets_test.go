@@ -8,7 +8,7 @@ import (
 
 func TestLocalRuntimeDatasetRefresh(t *testing.T) {
 	spice := NewSpiceClient()
-	defer spice.Close()
+	defer func() { _ = spice.Close() }()
 
 	if err := spice.Init(WithHttpAddress("http://127.0.0.1:8090")); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
