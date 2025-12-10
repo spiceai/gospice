@@ -15,7 +15,7 @@ func TestIsSpiceHealthy(t *testing.T) {
 			}
 		}()
 
-		if err := spice.Init(); err != nil {
+		if err := spice.Init(WithHttpAddress("http://localhost:8090")); err != nil {
 			t.Fatalf("error initializing SpiceClient: %v", err)
 		}
 
@@ -87,7 +87,7 @@ func TestIsSpiceReady(t *testing.T) {
 			}
 		}()
 
-		if err := spice.Init(); err != nil {
+		if err := spice.Init(WithHttpAddress("http://localhost:8090")); err != nil {
 			t.Fatalf("error initializing SpiceClient: %v", err)
 		}
 

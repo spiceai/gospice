@@ -90,7 +90,7 @@ func TestLocalRuntime(t *testing.T) {
 	spice := NewSpiceClient()
 	defer func() { _ = spice.Close() }()
 
-	if err := spice.Init(); err != nil {
+	if err := spice.Init(WithHttpAddress("http://localhost:8090")); err != nil {
 		t.Fatalf("error initializing SpiceClient: %v", err)
 	}
 
