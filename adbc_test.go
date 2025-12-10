@@ -9,9 +9,9 @@ import (
 )
 
 // TestADBCCloudBasicQuery tests basic ADBC query functionality against Spice Cloud
-// NOTE: Skipped because prepare/execute is only supported locally, not on Spice Cloud
 func TestADBCCloudBasicQuery(t *testing.T) {
-	t.Skip("Skipping: prepare/execute is only supported locally, not on Spice Cloud")
+	// Uses SPICE_FLIGHT_URL and SPICE_HTTP_URL env vars if set
+	// e.g., SPICE_FLIGHT_URL="dev-data.spiceai.io:443" SPICE_HTTP_URL="https://dev-data.spiceai.io" for dev
 
 	spice := NewSpiceClient()
 	defer func() {
@@ -43,7 +43,7 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 	t.Run("Cloud - Simple ADBC Query", func(t *testing.T) {
 		reader, err := spice.SqlWithParams(context.Background(), "SELECT 1 as number")
 		if err != nil {
-			t.Skipf("Skipping - error querying: %v", err)
+			t.Fatalf("error querying: %v", err)
 		}
 		defer reader.Release()
 
@@ -70,7 +70,7 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 			100,
 		)
 		if err != nil {
-			t.Skipf("Skipping - error querying: %v", err)
+			t.Fatalf("error querying: %v", err)
 		}
 		defer reader.Release()
 
@@ -138,7 +138,7 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 			"BUILDING",
 		)
 		if err != nil {
-			t.Skipf("Skipping - error querying: %v", err)
+			t.Fatalf("error querying: %v", err)
 		}
 		defer reader.Release()
 
