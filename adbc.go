@@ -156,6 +156,12 @@ func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...a
 	return rdr, nil
 }
 
+// QueryWithParams is deprecated. Use SqlWithParams instead.
+// Kept for backward compatibility with v7.
+func (c *SpiceClient) QueryWithParams(ctx context.Context, sql string, params ...any) (array.RecordReader, error) {
+	return c.SqlWithParams(ctx, sql, params...)
+}
+
 // queryADBCWithParams executes a parameterized query using ADBC
 func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, params ...any) (array.RecordReader, error) {
 	if c.adbcClient == nil || c.adbcClient.conn == nil {
@@ -180,8 +186,12 @@ func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, param
 	}
 
 	// If we have parameters, bind them
-	// Note: We skip the Prepare() call as it's only an optimization and not supported by all servers
 	if len(params) > 0 {
+		// Must call Prepare() before Bind()
+		if err := stmt.Prepare(ctx); err != nil {
+			return nil, fmt.Errorf("error preparing statement: %w", err)
+		}
+
 		// Bind parameters
 		if err := c.bindParameters(stmt, params...); err != nil {
 			return nil, fmt.Errorf("error binding parameters: %w", err)

@@ -420,7 +420,7 @@ if err := reader.Err(); err != nil {
 - [ ] Update Arrow imports if using Arrow types directly
 - [ ] Verify build with `go build ./...`
 - [ ] Run tests with `go test ./...`
-- [ ] Consider using `QueryWithParams()` for queries with user input
+- [ ] Consider using `SqlWithParams()` for queries with user input
 - [ ] Add health checks to tests and applications
 - [ ] Update CI/CD pipelines if needed
 

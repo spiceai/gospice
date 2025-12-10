@@ -294,13 +294,9 @@ func (c *SpiceClient) IsSpiceHealthy(ctx context.Context) bool {
 }
 
 // IsSpiceReady checks if the Spice instance is ready to accept queries by calling the /v1/ready endpoint.
-// This endpoint requires authentication via API key and returns "ready" in the body when ready.
-// Returns true if ready, false otherwise.
+// For Spice Cloud, this endpoint requires authentication via API key. For local Spice instances, no API key is required.
+// Returns "ready" in the body when ready. Returns true if ready, false otherwise.
 func (c *SpiceClient) IsSpiceReady(ctx context.Context) bool {
-	if c.apiKey == "" {
-		return false
-	}
-
 	readyUrl := fmt.Sprintf("%s/v1/ready", c.baseHttpUrl)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", readyUrl, nil)
@@ -309,7 +305,9 @@ func (c *SpiceClient) IsSpiceReady(ctx context.Context) bool {
 	}
 
 	req.Header.Set("User-Agent", c.userAgent)
-	req.Header.Set("X-API-Key", c.apiKey)
+	if c.apiKey != "" {
+		req.Header.Set("X-API-Key", c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
