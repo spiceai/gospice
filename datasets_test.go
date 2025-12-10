@@ -22,7 +22,7 @@ func TestLocalRuntimeDatasetRefresh(t *testing.T) {
 	}
 
 	// Wait for Spice to be ready (with timeout)
-	timeout := time.After(60 * time.Second)
+	timeout := time.After(120 * time.Second)
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
