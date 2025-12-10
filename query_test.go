@@ -2,7 +2,6 @@ package gospice
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -27,14 +26,14 @@ func TestBasicQuery(t *testing.T) {
 	}
 
 	if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
-		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+		t.Fatalf("error initializing SpiceClient: %v", err)
 	}
 
 	t.Run("Recent Ethereum Blocks", func(t *testing.T) {
 		t.Skip()
 		reader, err := spice.Query(context.Background(), "SELECT number, \"timestamp\", hash FROM eth.recent_blocks ORDER BY number LIMIT 10")
 		if err != nil {
-			panic(fmt.Errorf("error querying: %w", err))
+			t.Fatalf("error querying: %v", err)
 		}
 		defer reader.Release()
 
@@ -92,13 +91,37 @@ func TestLocalRuntime(t *testing.T) {
 	defer func() { _ = spice.Close() }()
 
 	if err := spice.Init(); err != nil {
-		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+		t.Fatalf("error initializing SpiceClient: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Check if Spice is healthy
+	if !spice.IsSpiceHealthy(ctx) {
+		t.Fatal("Spice instance is not healthy")
+	}
+
+	// Wait for Spice to be ready (with timeout)
+	timeout := time.After(60 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	ready := false
+	for !ready {
+		select {
+		case <-timeout:
+			t.Fatal("Timed out waiting for Spice to be ready")
+		case <-ticker.C:
+			if spice.IsSpiceReady(ctx) {
+				ready = true
+			}
+		}
 	}
 
 	t.Run("Query Local Dataset", func(t *testing.T) {
-		reader, err := spice.Query(context.Background(), "select * from taxi_trips limit 3;")
+		reader, err := spice.Query(ctx, "select * from taxi_trips limit 3;")
 		if err != nil {
-			panic(fmt.Errorf("error querying: %w", err))
+			t.Fatalf("error querying: %v", err)
 		}
 		defer reader.Release()
 
