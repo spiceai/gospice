@@ -49,7 +49,7 @@ func TestBasicQuery(t *testing.T) {
 		}
 
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			defer record.Release()
 
 			if record.NumRows() != 10 {
@@ -126,7 +126,7 @@ func TestLocalRuntime(t *testing.T) {
 		defer reader.Release()
 
 		for reader.Next() {
-			record := reader.Record()
+			record := reader.RecordBatch()
 			defer record.Release()
 		}
 	})

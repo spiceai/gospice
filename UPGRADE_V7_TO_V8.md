@@ -394,7 +394,7 @@ if err != nil {
 defer reader.Release()
 
 for reader.Next() {
-    record := reader.Record()
+    record := reader.RecordBatch()
     defer record.Release()
     // Process record...
 }

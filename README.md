@@ -52,7 +52,7 @@ if err := spice.Init(
 
 ```go
     for reader.Next() {
-        record := reader.Record()
+        record := reader.RecordBatch()
         defer record.Release()
         fmt.Println(record)
     }
@@ -75,7 +75,7 @@ if err != nil {
 defer reader.Release()
 
 for reader.Next() {
-    record := reader.Record()
+    record := reader.RecordBatch()
     defer record.Release()
     fmt.Println(record)
 }
