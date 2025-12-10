@@ -31,10 +31,10 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 	// Check if Spice Cloud is healthy and ready
 	ctx := context.Background()
 	if !spice.IsSpiceHealthy(ctx) {
-		t.Skip("Skipping - Spice Cloud is not healthy")
+		t.Fatal("Spice Cloud is not healthy")
 	}
 	if !spice.IsSpiceReady(ctx) {
-		t.Skip("Skipping - Spice Cloud is not ready (check API key)")
+		t.Fatal("Spice Cloud is not ready (check API key)")
 	}
 
 	t.Run("Cloud - Simple ADBC Query", func(t *testing.T) {
@@ -224,7 +224,7 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 	// Check if local Spice runtime is healthy
 	ctx := context.Background()
 	if !spice.IsSpiceHealthy(ctx) {
-		t.Skip("Skipping - local Spice runtime is not healthy")
+		t.Fatal("local Spice runtime is not healthy")
 	}
 
 	t.Run("Local - Parameterized Query with Float", func(t *testing.T) {
@@ -392,7 +392,7 @@ func TestADBCLocalBasicQuery(t *testing.T) {
 	// Check if local Spice runtime is healthy
 	ctx := context.Background()
 	if !spice.IsSpiceHealthy(ctx) {
-		t.Skip("Skipping - local Spice runtime is not healthy")
+		t.Fatal("local Spice runtime is not healthy")
 	}
 
 	t.Run("Local - Query Dataset with ADBC", func(t *testing.T) {
