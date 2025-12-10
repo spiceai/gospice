@@ -9,7 +9,7 @@ import (
 
 func querySpiceCloud() {
 	spice := gospice.NewSpiceClient()
-	defer spice.Close()
+	defer func() { _ = spice.Close() }()
 
 	if err := spice.Init(
 		gospice.WithApiKey("3437|89d6b41cd0034cd68eea704f5e88779d"),
@@ -33,7 +33,7 @@ func querySpiceCloud() {
 
 func querySpiceLocal() {
 	spice := gospice.NewSpiceClient()
-	defer spice.Close()
+	defer func() { _ = spice.Close() }()
 
 	if err := spice.Init(); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
@@ -55,7 +55,7 @@ func querySpiceLocal() {
 // Test refreshing a local spiced dataset.
 func localDatasetRefresh() {
 	spice := gospice.NewSpiceClient()
-	defer spice.Close()
+	defer func() { _ = spice.Close() }()
 
 	if err := spice.Init(
 		gospice.WithHttpAddress("http://127.0.0.1:8090"),
