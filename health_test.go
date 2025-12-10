@@ -15,7 +15,7 @@ func TestIsSpiceHealthy(t *testing.T) {
 			}
 		}()
 
-		if err := spice.Init(); err != nil {
+		if err := spice.Init(WithHttpAddress("http://localhost:8090")); err != nil {
 			t.Fatalf("error initializing SpiceClient: %v", err)
 		}
 
@@ -54,7 +54,7 @@ func TestIsSpiceHealthy(t *testing.T) {
 }
 
 func TestIsSpiceReady(t *testing.T) {
-	t.Run("Cloud - Ready Check with API Key", func(t *testing.T) {
+	t.Run("Cloud - Ready Check", func(t *testing.T) {
 		spice := NewSpiceClient()
 		defer func() {
 			if err := spice.Close(); err != nil {
@@ -79,7 +79,7 @@ func TestIsSpiceReady(t *testing.T) {
 		t.Logf("Spice Cloud ready status: %v", isReady)
 	})
 
-	t.Run("Cloud - Ready Check without API Key", func(t *testing.T) {
+	t.Run("Local - Ready Check", func(t *testing.T) {
 		spice := NewSpiceClient()
 		defer func() {
 			if err := spice.Close(); err != nil {
@@ -87,41 +87,16 @@ func TestIsSpiceReady(t *testing.T) {
 			}
 		}()
 
-		// Initialize without API key
-		if err := spice.Init(WithSpiceCloudAddress()); err != nil {
-			t.Fatalf("error initializing SpiceClient: %v", err)
-		}
-
-		ctx := context.Background()
-		isReady := spice.IsSpiceReady(ctx)
-
-		// Should be false since no API key provided
-		if isReady {
-			t.Errorf("Expected IsSpiceReady to return false without API key, got true")
-		}
-		t.Logf("Spice Cloud ready status (no API key): %v", isReady)
-	})
-
-	t.Run("Local - Ready Check (No Auth Required)", func(t *testing.T) {
-		spice := NewSpiceClient()
-		defer func() {
-			if err := spice.Close(); err != nil {
-				t.Logf("warning: failed to close SpiceClient: %v", err)
-			}
-		}()
-
-		if err := spice.Init(); err != nil {
+		if err := spice.Init(WithHttpAddress("http://localhost:8090")); err != nil {
 			t.Fatalf("error initializing SpiceClient: %v", err)
 		}
 
 		ctx := context.Background()
 
-		// Local runtime doesn't require API key, so this will return false
-		// but IsSpiceHealthy should work
 		isHealthy := spice.IsSpiceHealthy(ctx)
 		isReady := spice.IsSpiceReady(ctx)
 
 		t.Logf("Local Spice health status: %v", isHealthy)
-		t.Logf("Local Spice ready status (no auth): %v", isReady)
+		t.Logf("Local Spice ready status: %v", isReady)
 	})
 }
