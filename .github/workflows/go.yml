@@ -37,19 +37,13 @@ jobs:
         run: go build -v ./...
 
       - name: Install Spice (https://install.spiceai.org) (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           curl https://install.spiceai.org | /bin/bash
           echo "$HOME/.spice/bin" >> $GITHUB_PATH
           $HOME/.spice/bin/spice install
-
-      - name: Install Spice (https://install.spiceai.org) (MacOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew install spiceai/spiceai/spice
-          brew install spiceai/spiceai/spiced
 
       - name: install Spice (Windows)
         if: matrix.os == 'windows-latest'
@@ -68,7 +62,7 @@ jobs:
           spice init spice_qs
           cd spice_qs
           spice add spiceai/quickstart
-          spiced &> spice.log &
+          spice run &> spice.log &
           # time to initialize added dataset
           sleep 30
 
@@ -84,4 +78,8 @@ jobs:
         shell: pwsh
 
       - name: Test
+        env:
+          SPICE_HTTP_URL: ${{ vars.SPICE_HTTP_URL }}
+          SPICE_FLIGHT_URL: ${{ vars.SPICE_FLIGHT_URL }}
+          SPICE_API_KEY: ${{ secrets.SPICE_CLOUD_API_KEY }}
         run: go test -v ./...

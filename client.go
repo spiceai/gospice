@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"strings"
@@ -36,6 +37,7 @@ type SpiceClient struct {
 	baseHttpUrl   string
 
 	flightClient  flight.Client
+	adbcClient    *ADBCClient
 	httpClient    http.Client
 	backoffPolicy backoff.BackOff
 	maxRetries    uint
@@ -133,6 +135,10 @@ func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 
 	c.flightClient = flightClient
 
+	// Initialize ADBC client - non-fatal, will be initialized lazily if needed
+	// This allows health checks to work even if ADBC connection fails initially
+	_ = c.initADBC()
+
 	return nil
 }
 
@@ -152,6 +158,11 @@ func (c *SpiceClient) Close() error {
 			errors = append(errors, err)
 		}
 	}
+
+	if err := c.closeADBC(); err != nil {
+		errors = append(errors, err)
+	}
+
 	c.httpClient.CloseIdleConnections()
 
 	if len(errors) > 0 {
@@ -246,4 +257,75 @@ func (c *SpiceClient) getBackoffPolicy() backoff.BackOff {
 	}
 	b.Reset()
 	return b
+}
+
+// IsSpiceHealthy checks if the Spice instance is healthy by calling the /health endpoint.
+// This is an unauthenticated endpoint that returns 200 OK with "ok" in the body if the instance is healthy.
+// Returns true if healthy, false otherwise.
+func (c *SpiceClient) IsSpiceHealthy(ctx context.Context) bool {
+	healthUrl := fmt.Sprintf("%s/health", c.baseHttpUrl)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", healthUrl, nil)
+	if err != nil {
+		return false
+	}
+
+	req.Header.Set("User-Agent", c.userAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer func() {
+		_ = resp.Body.Close() // Ignore close errors in health check
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	// Read and check body for "ok"
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(strings.ToLower(string(body)), "ok")
+}
+
+// IsSpiceReady checks if the Spice instance is ready to accept queries by calling the /v1/ready endpoint.
+// For Spice Cloud, this endpoint requires authentication via API key. For local Spice instances, no API key is required.
+// Returns "ready" in the body when ready. Returns true if ready, false otherwise.
+func (c *SpiceClient) IsSpiceReady(ctx context.Context) bool {
+	readyUrl := fmt.Sprintf("%s/v1/ready", c.baseHttpUrl)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", readyUrl, nil)
+	if err != nil {
+		return false
+	}
+
+	req.Header.Set("User-Agent", c.userAgent)
+	if c.apiKey != "" {
+		req.Header.Set("X-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer func() {
+		_ = resp.Body.Close() // Ignore close errors in ready check
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	// Read and check body for "ready"
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(strings.ToLower(string(body)), "ready")
 }

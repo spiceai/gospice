@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	gospice "github.com/spiceai/gospice/v7"
+	gospice "github.com/spiceai/gospice/v8"
 )
 
 func querySpiceCloud() {
@@ -25,7 +25,7 @@ func querySpiceCloud() {
 	defer reader.Release()
 
 	for reader.Next() {
-		record := reader.Record()
+		record := reader.RecordBatch()
 		defer record.Release()
 		fmt.Println(record)
 	}
@@ -46,7 +46,7 @@ func querySpiceLocal() {
 	defer reader.Release()
 
 	for reader.Next() {
-		record := reader.Record()
+		record := reader.RecordBatch()
 		defer record.Release()
 		fmt.Println(record)
 	}

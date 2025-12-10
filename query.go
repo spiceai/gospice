@@ -12,9 +12,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Query executes a query against Spice.ai and returns a Apache Arrow RecordReader
+// Sql executes a SQL query against Spice.ai and returns an Apache Arrow RecordReader
 // For more information on Apache Arrow RecordReader visit https://godoc.org/github.com/apache/arrow/go/arrow/array#RecordReader
-func (c *SpiceClient) Query(ctx context.Context, sql string) (array.RecordReader, error) {
+func (c *SpiceClient) Sql(ctx context.Context, sql string) (array.RecordReader, error) {
 	var rdr array.RecordReader
 	err := backoff.Retry(func() error {
 		var err error
@@ -44,6 +44,12 @@ func (c *SpiceClient) Query(ctx context.Context, sql string) (array.RecordReader
 	return rdr, nil
 }
 
+// Query is deprecated. Use Sql instead.
+// Kept for backward compatibility with v7.
+func (c *SpiceClient) Query(ctx context.Context, sql string) (array.RecordReader, error) {
+	return c.Sql(ctx, sql)
+}
+
 func queryInternal(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
 	if client == nil {
 		return nil, fmt.Errorf("flight client is not initialized")
@@ -71,6 +77,10 @@ func queryInternal(ctx context.Context, client flight.Client, appId string, apiK
 
 	rdr, err := flight.NewRecordReader(stream)
 	if err != nil {
+		// Ensure stream is closed if reader creation fails
+		if closeErr := stream.CloseSend(); closeErr != nil {
+			return nil, fmt.Errorf("error creating record reader: %w (failed to close stream: %v)", err, closeErr)
+		}
 		return nil, err
 	}
 
