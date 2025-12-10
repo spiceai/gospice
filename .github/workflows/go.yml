@@ -18,10 +18,10 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         go-version: ['1.24', '1.25']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
 
@@ -29,7 +29,9 @@ jobs:
         run: go vet -v ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1
 
       - name: Build
         run: go build -v ./...
@@ -68,7 +70,7 @@ jobs:
           spice add spiceai/quickstart
           spiced &> spice.log &
           # time to initialize added dataset
-          sleep 10
+          sleep 30
 
       - name: Init and start spice app (Windows)
         if: matrix.os == 'windows-latest'
@@ -78,7 +80,7 @@ jobs:
           spice add spiceai/quickstart
           Start-Process -FilePath spice run
           # time to initialize added dataset
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 30
         shell: pwsh
 
       - name: Test

@@ -51,7 +51,7 @@ func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, opts *
 	if err != nil {
 		return fmt.Errorf("error executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("POST %s failed with status=%d. body=%v", url, resp.StatusCode, body)
 	}
