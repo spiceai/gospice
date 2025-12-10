@@ -162,7 +162,7 @@ func (c *SpiceClient) QueryWithParams(ctx context.Context, sql string, params ..
 	return c.SqlWithParams(ctx, sql, params...)
 }
 
-// queryADBCWithParams executes a parameterized query using ADBC
+// queryADBCWithParams executes a parameterized query using ADBC with prepare/execute pattern
 func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, params ...any) (array.RecordReader, error) {
 	if c.adbcClient == nil || c.adbcClient.conn == nil {
 		return nil, fmt.Errorf("ADBC connection is not initialized")
@@ -185,14 +185,13 @@ func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, param
 		return nil, fmt.Errorf("error setting SQL query: %w", err)
 	}
 
-	// If we have parameters, bind them
-	if len(params) > 0 {
-		// Must call Prepare() before Bind()
-		if err := stmt.Prepare(ctx); err != nil {
-			return nil, fmt.Errorf("error preparing statement: %w", err)
-		}
+	// Always call Prepare() for ADBC connections
+	if err := stmt.Prepare(ctx); err != nil {
+		return nil, fmt.Errorf("error preparing statement: %w", err)
+	}
 
-		// Bind parameters
+	// Bind parameters if provided
+	if len(params) > 0 {
 		if err := c.bindParameters(stmt, params...); err != nil {
 			return nil, fmt.Errorf("error binding parameters: %w", err)
 		}
