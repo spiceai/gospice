@@ -23,11 +23,12 @@ import (
 type ADBCClient struct {
 	db   adbc.Database
 	conn adbc.Connection
+	mem  memory.Allocator // Reusable memory allocator for parameter binding
 }
 
 // initADBC initializes the ADBC connection
 func (c *SpiceClient) initADBC() error {
-	// Create ADBC driver instance
+	// Create reusable memory allocator
 	mem := memory.NewGoAllocator()
 	driver := flightsql.NewDriver(mem)
 
@@ -76,6 +77,7 @@ func (c *SpiceClient) initADBC() error {
 	c.adbcClient = &ADBCClient{
 		db:   db,
 		conn: conn,
+		mem:  mem,
 	}
 
 	return nil
@@ -252,9 +254,8 @@ func (c *SpiceClient) bindParameters(stmt adbc.Statement, params ...any) error {
 
 	schema := arrow.NewSchema(fields, nil)
 
-	// Create a record builder
-	mem := memory.NewGoAllocator()
-	bldr := array.NewRecordBuilder(mem, schema)
+	// Create a record builder using the reusable allocator
+	bldr := array.NewRecordBuilder(c.adbcClient.mem, schema)
 	defer bldr.Release()
 
 	// Add values to the builders

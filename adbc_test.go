@@ -54,11 +54,12 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 
 		for reader.Next() {
 			record := reader.RecordBatch()
-			defer record.Release()
 
 			if record.NumRows() == 0 {
+				record.Release()
 				t.Fatalf("Expected at least 1 row, got %d", record.NumRows())
 			}
+			record.Release()
 		}
 	})
 
