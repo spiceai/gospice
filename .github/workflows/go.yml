@@ -63,8 +63,16 @@ jobs:
           cd spice_qs
           spice add spiceai/quickstart
           spice run &> spice.log &
-          # time to initialize added dataset
-          sleep 30
+          # Wait for Spice to be ready
+          echo "Waiting for Spice to be ready..."
+          for i in {1..60}; do
+            if curl -s http://localhost:8090/v1/ready 2>/dev/null | grep -q "ready"; then
+              echo "Spice is ready!"
+              break
+            fi
+            echo "Waiting... ($i/60)"
+            sleep 1
+          done
 
       - name: Init and start spice app (Windows)
         if: matrix.os == 'windows-latest'
@@ -72,12 +80,40 @@ jobs:
           spice init spice_qs
           cd spice_qs
           spice add spiceai/quickstart
-          Start-Process -FilePath spice run
-          # time to initialize added dataset
-          Start-Sleep -Seconds 30
+          Start-Process -FilePath "spice" -ArgumentList "run" -RedirectStandardOutput "spice.log" -RedirectStandardError "spice.err.log"
+          # Wait for Spice to be ready
+          Write-Host "Waiting for Spice to be ready..."
+          for ($i = 1; $i -le 60; $i++) {
+            try {
+              $response = Invoke-WebRequest -Uri "http://localhost:8090/v1/ready" -UseBasicParsing -ErrorAction Stop
+              if ($response.Content -match "ready") {
+                Write-Host "Spice is ready!"
+                break
+              }
+            } catch {
+              # Ignore errors, keep waiting
+            }
+            Write-Host "Waiting... ($i/60)"
+            Start-Sleep -Seconds 1
+          }
         shell: pwsh
 
       - name: Test
         env:
           SPICE_API_KEY: ${{ secrets.SPICE_CLOUD_API_KEY }}
         run: go test -v ./...
+
+      - name: Print Spice logs (Unix)
+        if: always() && matrix.os != 'windows-latest'
+        run: |
+          echo "=== Spice Runtime Logs ==="
+          cat spice_qs/spice.log || echo "No log file found"
+
+      - name: Print Spice logs (Windows)
+        if: always() && matrix.os == 'windows-latest'
+        run: |
+          Write-Host "=== Spice Runtime Logs (stdout) ==="
+          Get-Content spice_qs\spice.log -ErrorAction SilentlyContinue
+          Write-Host "=== Spice Runtime Logs (stderr) ==="
+          Get-Content spice_qs\spice.err.log -ErrorAction SilentlyContinue
+        shell: pwsh
