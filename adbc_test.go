@@ -11,7 +11,7 @@ import (
 // TestADBCCloudBasicQuery tests basic ADBC query functionality against Spice Cloud
 func TestADBCCloudBasicQuery(t *testing.T) {
 	// Uses SPICE_FLIGHT_URL and SPICE_HTTP_URL env vars if set
-	// e.g., SPICE_FLIGHT_URL="dev-data.spiceai.io:443" SPICE_HTTP_URL="https://dev-data.spiceai.io" for dev
+	// e.g., SPICE_FLIGHT_URL="flight.spiceai.io:443" SPICE_HTTP_URL="https://data.spiceai.io"
 
 	spice := NewSpiceClient()
 	defer func() {
@@ -20,11 +20,9 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 		}
 	}()
 
-	var ApiKey string
-	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
-		ApiKey = v
-	} else {
-		ApiKey = TEST_API_KEY
+	ApiKey, exists := os.LookupEnv("SPICE_API_KEY")
+	if !exists || ApiKey == "" {
+		t.Skip("SPICE_API_KEY not set, skipping cloud authentication test")
 	}
 
 	if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
@@ -63,11 +61,11 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 		}
 	})
 
-	t.Run("Cloud - TPC-H Parameterized Query", func(t *testing.T) {
+	t.Run("Cloud - Parameterized Query", func(t *testing.T) {
 		reader, err := spice.SqlWithParams(
 			context.Background(),
-			"SELECT c_custkey, c_name FROM tpch.customer WHERE c_custkey > $1 ORDER BY c_custkey LIMIT 5",
-			100,
+			"SELECT trip_distance, fare_amount FROM taxi_trips WHERE trip_distance > $1 ORDER BY trip_distance LIMIT 5",
+			5.0,
 		)
 		if err != nil {
 			t.Fatalf("error querying: %v", err)
@@ -75,11 +73,11 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 		defer reader.Release()
 
 		schema := reader.Schema()
-		if !schema.HasField("c_custkey") {
-			t.Fatalf("Schema does not have field 'c_custkey'")
+		if !schema.HasField("trip_distance") {
+			t.Fatalf("Schema does not have field 'trip_distance'")
 		}
-		if !schema.HasField("c_name") {
-			t.Fatalf("Schema does not have field 'c_name'")
+		if !schema.HasField("fare_amount") {
+			t.Fatalf("Schema does not have field 'fare_amount'")
 		}
 
 		recordCount := 0
@@ -87,36 +85,19 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 			record := reader.RecordBatch()
 			recordCount++
 
-			// Validate c_custkey > 100
-			custKeyCol := record.Column(0)
+			// Validate trip_distance > 5.0
+			tripDistCol := record.Column(0)
 			for i := 0; i < int(record.NumRows()); i++ {
-				if !custKeyCol.IsNull(i) {
-					switch v := custKeyCol.(type) {
-					case *array.Int64:
-						if v.Value(i) <= 100 {
-							t.Errorf("Expected c_custkey > 100, got %d", v.Value(i))
+				if !tripDistCol.IsNull(i) {
+					switch v := tripDistCol.(type) {
+					case *array.Float64:
+						if v.Value(i) <= 5.0 {
+							t.Errorf("Expected trip_distance > 5.0, got %f", v.Value(i))
 						}
-					case *array.Int32:
-						if v.Value(i) <= 100 {
-							t.Errorf("Expected c_custkey > 100, got %d", v.Value(i))
+					case *array.Float32:
+						if v.Value(i) <= 5.0 {
+							t.Errorf("Expected trip_distance > 5.0, got %f", v.Value(i))
 						}
-					}
-				}
-			}
-
-			// Validate c_name is non-empty
-			nameCol := record.Column(1)
-			for i := 0; i < int(record.NumRows()); i++ {
-				if !nameCol.IsNull(i) {
-					var name string
-					switch v := nameCol.(type) {
-					case *array.String:
-						name = v.Value(i)
-					case *array.LargeString:
-						name = v.Value(i)
-					}
-					if len(name) == 0 {
-						t.Errorf("Expected non-empty customer name")
 					}
 				}
 			}
@@ -129,13 +110,13 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 		}
 	})
 
-	t.Run("Cloud - TPC-H Multiple Parameter Types", func(t *testing.T) {
+	t.Run("Cloud - Multiple Parameter Types", func(t *testing.T) {
 		reader, err := spice.SqlWithParams(
 			context.Background(),
-			"SELECT c_custkey, c_name, c_acctbal, c_mktsegment FROM tpch.customer WHERE c_custkey > $1 AND c_acctbal > $2 AND c_mktsegment = $3 ORDER BY c_custkey LIMIT 10",
-			100,
-			5000.0,
-			"BUILDING",
+			"SELECT trip_distance, fare_amount, payment_type FROM taxi_trips WHERE trip_distance > $1 AND fare_amount > $2 AND payment_type = $3 ORDER BY trip_distance LIMIT 10",
+			5.0,
+			20.0,
+			int64(1),
 		)
 		if err != nil {
 			t.Fatalf("error querying: %v", err)
@@ -143,7 +124,7 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 		defer reader.Release()
 
 		schema := reader.Schema()
-		fields := []string{"c_custkey", "c_name", "c_acctbal", "c_mktsegment"}
+		fields := []string{"trip_distance", "fare_amount", "payment_type"}
 		for _, field := range fields {
 			if !schema.HasField(field) {
 				t.Fatalf("Schema does not have field '%s'", field)
@@ -157,48 +138,48 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 
 			// Validate all parameter conditions
 			for i := 0; i < int(record.NumRows()); i++ {
-				// c_custkey > 100
-				custKeyCol := record.Column(0)
-				if !custKeyCol.IsNull(i) {
-					switch v := custKeyCol.(type) {
-					case *array.Int64:
-						if v.Value(i) <= 100 {
-							t.Errorf("Expected c_custkey > 100, got %d", v.Value(i))
-						}
-					case *array.Int32:
-						if v.Value(i) <= 100 {
-							t.Errorf("Expected c_custkey > 100, got %d", v.Value(i))
-						}
-					}
-				}
-
-				// c_acctbal > 5000.0
-				acctBalCol := record.Column(2)
-				if !acctBalCol.IsNull(i) {
-					switch v := acctBalCol.(type) {
+				// trip_distance > 5.0
+				tripDistCol := record.Column(0)
+				if !tripDistCol.IsNull(i) {
+					switch v := tripDistCol.(type) {
 					case *array.Float64:
-						if v.Value(i) <= 5000.0 {
-							t.Errorf("Expected c_acctbal > 5000.0, got %f", v.Value(i))
+						if v.Value(i) <= 5.0 {
+							t.Errorf("Expected trip_distance > 5.0, got %f", v.Value(i))
 						}
 					case *array.Float32:
-						if v.Value(i) <= 5000.0 {
-							t.Errorf("Expected c_acctbal > 5000.0, got %f", v.Value(i))
+						if v.Value(i) <= 5.0 {
+							t.Errorf("Expected trip_distance > 5.0, got %f", v.Value(i))
 						}
 					}
 				}
 
-				// c_mktsegment = "BUILDING"
-				mktSegCol := record.Column(3)
-				if !mktSegCol.IsNull(i) {
-					var mktSeg string
-					switch v := mktSegCol.(type) {
-					case *array.String:
-						mktSeg = v.Value(i)
-					case *array.LargeString:
-						mktSeg = v.Value(i)
+				// fare_amount > 20.0
+				fareCol := record.Column(1)
+				if !fareCol.IsNull(i) {
+					switch v := fareCol.(type) {
+					case *array.Float64:
+						if v.Value(i) <= 20.0 {
+							t.Errorf("Expected fare_amount > 20.0, got %f", v.Value(i))
+						}
+					case *array.Float32:
+						if v.Value(i) <= 20.0 {
+							t.Errorf("Expected fare_amount > 20.0, got %f", v.Value(i))
+						}
 					}
-					if mktSeg != "BUILDING" {
-						t.Errorf("Expected c_mktsegment 'BUILDING', got '%s'", mktSeg)
+				}
+
+				// payment_type = 1
+				paymentTypeCol := record.Column(2)
+				if !paymentTypeCol.IsNull(i) {
+					switch v := paymentTypeCol.(type) {
+					case *array.Int64:
+						if v.Value(i) != 1 {
+							t.Errorf("Expected payment_type 1, got %d", v.Value(i))
+						}
+					case *array.Int32:
+						if v.Value(i) != 1 {
+							t.Errorf("Expected payment_type 1, got %d", v.Value(i))
+						}
 					}
 				}
 			}

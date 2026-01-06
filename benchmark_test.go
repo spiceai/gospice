@@ -17,11 +17,9 @@ func BenchmarkCloudQuery(b *testing.B) {
 		}
 	}()
 
-	var ApiKey string
-	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
-		ApiKey = v
-	} else {
-		ApiKey = TEST_API_KEY
+	ApiKey, exists := os.LookupEnv("SPICE_API_KEY")
+	if !exists || ApiKey == "" {
+		b.Skip("SPICE_API_KEY not set, skipping cloud authentication test")
 	}
 
 	if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
@@ -60,11 +58,9 @@ func BenchmarkCloudSqlWithParams(b *testing.B) {
 		}
 	}()
 
-	var ApiKey string
-	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
-		ApiKey = v
-	} else {
-		ApiKey = TEST_API_KEY
+	ApiKey, exists := os.LookupEnv("SPICE_API_KEY")
+	if !exists || ApiKey == "" {
+		b.Skip("SPICE_API_KEY not set, skipping cloud authentication test")
 	}
 
 	if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
@@ -232,11 +228,9 @@ func BenchmarkClientInitialization(b *testing.B) {
 	})
 
 	b.Run("Cloud", func(b *testing.B) {
-		var ApiKey string
-		if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
-			ApiKey = v
-		} else {
-			ApiKey = TEST_API_KEY
+		ApiKey, exists := os.LookupEnv("SPICE_API_KEY")
+		if !exists || ApiKey == "" {
+			b.Skip("SPICE_API_KEY not set, skipping cloud authentication test")
 		}
 
 		for i := 0; i < b.N; i++ {

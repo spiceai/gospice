@@ -35,11 +35,9 @@ func TestIsSpiceHealthy(t *testing.T) {
 			}
 		}()
 
-		var ApiKey string
-		if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
-			ApiKey = v
-		} else {
-			ApiKey = TEST_API_KEY
+		ApiKey, exists := os.LookupEnv("SPICE_API_KEY")
+		if !exists || ApiKey == "" {
+			t.Skip("SPICE_API_KEY not set, skipping cloud authentication test")
 		}
 
 		if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
@@ -62,11 +60,9 @@ func TestIsSpiceReady(t *testing.T) {
 			}
 		}()
 
-		var ApiKey string
-		if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
-			ApiKey = v
-		} else {
-			ApiKey = TEST_API_KEY
+		ApiKey, exists := os.LookupEnv("SPICE_API_KEY")
+		if !exists || ApiKey == "" {
+			t.Skip("SPICE_API_KEY not set, skipping cloud authentication test")
 		}
 
 		if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
