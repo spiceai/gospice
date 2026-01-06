@@ -79,7 +79,5 @@ jobs:
 
       - name: Test
         env:
-          SPICE_HTTP_URL: ${{ vars.SPICE_HTTP_URL }}
-          SPICE_FLIGHT_URL: ${{ vars.SPICE_FLIGHT_URL }}
           SPICE_API_KEY: ${{ secrets.SPICE_CLOUD_API_KEY }}
         run: go test -v ./...

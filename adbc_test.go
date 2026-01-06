@@ -11,7 +11,7 @@ import (
 // TestADBCCloudBasicQuery tests basic ADBC query functionality against Spice Cloud
 func TestADBCCloudBasicQuery(t *testing.T) {
 	// Uses SPICE_FLIGHT_URL and SPICE_HTTP_URL env vars if set
-	// e.g., SPICE_FLIGHT_URL="dev-data.spiceai.io:443" SPICE_HTTP_URL="https://dev-data.spiceai.io" for dev
+	// e.g., SPICE_FLIGHT_URL="flight.spiceai.io:443" SPICE_HTTP_URL="https://data.spiceai.io"
 
 	spice := NewSpiceClient()
 	defer func() {
