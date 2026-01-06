@@ -265,19 +265,19 @@ func TestSqlWithAuth(t *testing.T) {
 		}
 	})
 
-	t.Run("Sql with auth - TPC-H query", func(t *testing.T) {
-		reader, err := spice.Sql(ctx, "SELECT c_custkey, c_name FROM tpch.customer ORDER BY c_custkey LIMIT 5")
+	t.Run("Sql with auth - taxi_trips query", func(t *testing.T) {
+		reader, err := spice.Sql(ctx, "SELECT trip_distance, fare_amount FROM taxi_trips ORDER BY trip_distance LIMIT 5")
 		if err != nil {
 			t.Fatalf("Sql with auth failed: %v", err)
 		}
 		defer reader.Release()
 
 		schema := reader.Schema()
-		if !schema.HasField("c_custkey") {
-			t.Fatalf("Schema does not have field 'c_custkey'")
+		if !schema.HasField("trip_distance") {
+			t.Fatalf("Schema does not have field 'trip_distance'")
 		}
-		if !schema.HasField("c_name") {
-			t.Fatalf("Schema does not have field 'c_name'")
+		if !schema.HasField("fare_amount") {
+			t.Fatalf("Schema does not have field 'fare_amount'")
 		}
 
 		rowCount := 0
