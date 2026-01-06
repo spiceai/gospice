@@ -133,7 +133,7 @@ func TestLocalRuntime(t *testing.T) {
 }
 
 // TestSqlWithoutAuth tests the Sql method without authentication against local Spice runtime.
-// This verifies that the fix for "no authorization header on the response" works correctly.
+// This verifies that queries work correctly without authentication when no API key is provided.
 func TestSqlWithoutAuth(t *testing.T) {
 	spice := NewSpiceClient()
 	defer func() { _ = spice.Close() }()
@@ -151,7 +151,7 @@ func TestSqlWithoutAuth(t *testing.T) {
 	}
 
 	// Wait for Spice to be ready (with timeout)
-	timeout := time.After(30 * time.Second)
+	timeout := time.After(120 * time.Second)
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
