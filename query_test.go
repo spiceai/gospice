@@ -225,15 +225,13 @@ func TestSqlWithoutAuth(t *testing.T) {
 
 // TestSqlWithAuth tests the Sql method with authentication against Spice Cloud.
 func TestSqlWithAuth(t *testing.T) {
+	ApiKey, exists := os.LookupEnv("SPICE_API_KEY")
+	if !exists || ApiKey == "" {
+		t.Skip("SPICE_API_KEY not set, skipping cloud authentication test")
+	}
+
 	spice := NewSpiceClient()
 	defer func() { _ = spice.Close() }()
-
-	var ApiKey string
-	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
-		ApiKey = v
-	} else {
-		ApiKey = TEST_API_KEY
-	}
 
 	if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
 		t.Fatalf("error initializing SpiceClient: %v", err)
