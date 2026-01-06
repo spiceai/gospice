@@ -235,10 +235,10 @@ func TestSqlWithAuth(t *testing.T) {
 
 	// Check if Spice Cloud is healthy and ready
 	if !spice.IsSpiceHealthy(ctx) {
-		t.Skip("Spice Cloud is not healthy, skipping test")
+		t.Fatal("Spice Cloud is not healthy")
 	}
 	if !spice.IsSpiceReady(ctx) {
-		t.Skip("Spice Cloud is not ready (check API key), skipping test")
+		t.Fatal("Spice Cloud is not ready (check API key)")
 	}
 
 	t.Run("Sql with auth - simple query", func(t *testing.T) {
