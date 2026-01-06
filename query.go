@@ -55,9 +55,14 @@ func queryInternal(ctx context.Context, client flight.Client, appId string, apiK
 		return nil, fmt.Errorf("flight client is not initialized")
 	}
 
-	authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
-	if err != nil {
-		return nil, err
+	// Only authenticate if credentials are provided
+	queryCtx := ctx
+	if appId != "" && apiKey != "" {
+		authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
+		if err != nil {
+			return nil, err
+		}
+		queryCtx = authContext
 	}
 
 	fd := &flight.FlightDescriptor{
@@ -65,12 +70,12 @@ func queryInternal(ctx context.Context, client flight.Client, appId string, apiK
 		Cmd:  []byte(sql),
 	}
 
-	info, err := client.GetFlightInfo(authContext, fd)
+	info, err := client.GetFlightInfo(queryCtx, fd)
 	if err != nil {
 		return nil, err
 	}
 
-	stream, err := client.DoGet(authContext, info.Endpoint[0].Ticket)
+	stream, err := client.DoGet(queryCtx, info.Endpoint[0].Ticket)
 	if err != nil {
 		return nil, err
 	}

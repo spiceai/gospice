@@ -131,3 +131,176 @@ func TestLocalRuntime(t *testing.T) {
 		}
 	})
 }
+
+// TestSqlWithoutAuth tests the Sql method without authentication against local Spice runtime.
+// This verifies that the fix for "no authorization header on the response" works correctly.
+func TestSqlWithoutAuth(t *testing.T) {
+	spice := NewSpiceClient()
+	defer func() { _ = spice.Close() }()
+
+	// Initialize without API key - this should work with local runtime
+	if err := spice.Init(WithHttpAddress("http://localhost:8090")); err != nil {
+		t.Fatalf("error initializing SpiceClient: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Check if Spice is healthy
+	if !spice.IsSpiceHealthy(ctx) {
+		t.Skip("Local Spice instance is not healthy, skipping test")
+	}
+
+	// Wait for Spice to be ready (with timeout)
+	timeout := time.After(30 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	ready := false
+	for !ready {
+		select {
+		case <-timeout:
+			t.Skip("Timed out waiting for Spice to be ready, skipping test")
+		case <-ticker.C:
+			if spice.IsSpiceReady(ctx) {
+				ready = true
+			}
+		}
+	}
+
+	t.Run("Sql without auth - simple query", func(t *testing.T) {
+		reader, err := spice.Sql(ctx, "SELECT 1 as num")
+		if err != nil {
+			t.Fatalf("Sql without auth failed: %v", err)
+		}
+		defer reader.Release()
+
+		schema := reader.Schema()
+		if !schema.HasField("num") {
+			t.Fatalf("Schema does not have field 'num'")
+		}
+
+		rowCount := 0
+		for reader.Next() {
+			record := reader.RecordBatch()
+			rowCount += int(record.NumRows())
+			record.Release()
+		}
+
+		if rowCount != 1 {
+			t.Fatalf("Expected 1 row, got %d", rowCount)
+		}
+	})
+
+	t.Run("Sql without auth - dataset query", func(t *testing.T) {
+		reader, err := spice.Sql(ctx, "SELECT trip_distance, fare_amount FROM taxi_trips LIMIT 5")
+		if err != nil {
+			t.Fatalf("Sql without auth failed: %v", err)
+		}
+		defer reader.Release()
+
+		schema := reader.Schema()
+		if !schema.HasField("trip_distance") {
+			t.Fatalf("Schema does not have field 'trip_distance'")
+		}
+		if !schema.HasField("fare_amount") {
+			t.Fatalf("Schema does not have field 'fare_amount'")
+		}
+
+		rowCount := 0
+		for reader.Next() {
+			record := reader.RecordBatch()
+			rowCount += int(record.NumRows())
+			record.Release()
+		}
+
+		if rowCount == 0 {
+			t.Fatalf("Expected at least 1 row, got 0")
+		}
+		if rowCount > 5 {
+			t.Fatalf("Expected at most 5 rows, got %d", rowCount)
+		}
+		t.Logf("Sql without auth returned %d rows", rowCount)
+	})
+}
+
+// TestSqlWithAuth tests the Sql method with authentication against Spice Cloud.
+func TestSqlWithAuth(t *testing.T) {
+	spice := NewSpiceClient()
+	defer func() { _ = spice.Close() }()
+
+	var ApiKey string
+	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
+		ApiKey = v
+	} else {
+		ApiKey = TEST_API_KEY
+	}
+
+	if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
+		t.Fatalf("error initializing SpiceClient: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Check if Spice Cloud is healthy and ready
+	if !spice.IsSpiceHealthy(ctx) {
+		t.Skip("Spice Cloud is not healthy, skipping test")
+	}
+	if !spice.IsSpiceReady(ctx) {
+		t.Skip("Spice Cloud is not ready (check API key), skipping test")
+	}
+
+	t.Run("Sql with auth - simple query", func(t *testing.T) {
+		reader, err := spice.Sql(ctx, "SELECT 1 as num")
+		if err != nil {
+			t.Fatalf("Sql with auth failed: %v", err)
+		}
+		defer reader.Release()
+
+		schema := reader.Schema()
+		if !schema.HasField("num") {
+			t.Fatalf("Schema does not have field 'num'")
+		}
+
+		rowCount := 0
+		for reader.Next() {
+			record := reader.RecordBatch()
+			rowCount += int(record.NumRows())
+			record.Release()
+		}
+
+		if rowCount != 1 {
+			t.Fatalf("Expected 1 row, got %d", rowCount)
+		}
+	})
+
+	t.Run("Sql with auth - TPC-H query", func(t *testing.T) {
+		reader, err := spice.Sql(ctx, "SELECT c_custkey, c_name FROM tpch.customer ORDER BY c_custkey LIMIT 5")
+		if err != nil {
+			t.Fatalf("Sql with auth failed: %v", err)
+		}
+		defer reader.Release()
+
+		schema := reader.Schema()
+		if !schema.HasField("c_custkey") {
+			t.Fatalf("Schema does not have field 'c_custkey'")
+		}
+		if !schema.HasField("c_name") {
+			t.Fatalf("Schema does not have field 'c_name'")
+		}
+
+		rowCount := 0
+		for reader.Next() {
+			record := reader.RecordBatch()
+			rowCount += int(record.NumRows())
+			record.Release()
+		}
+
+		if rowCount == 0 {
+			t.Fatalf("Expected at least 1 row, got 0")
+		}
+		if rowCount > 5 {
+			t.Fatalf("Expected at most 5 rows, got %d", rowCount)
+		}
+		t.Logf("Sql with auth returned %d rows", rowCount)
+	})
+}
