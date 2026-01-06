@@ -9,20 +9,14 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
-const (
-	TEST_API_KEY = "323337|b42eceab2e7c4a60a04ad57bebea830d" // spice.ai/spicehq/gospice-tests
-)
-
 // Execute a basic query and check for columns and rows
 func TestBasicQuery(t *testing.T) {
 	spice := NewSpiceClient()
 	defer func() { _ = spice.Close() }()
 
-	var ApiKey string
-	if v, exists := os.LookupEnv("SPICE_API_KEY"); exists {
-		ApiKey = v
-	} else {
-		ApiKey = TEST_API_KEY
+	ApiKey, exists := os.LookupEnv("SPICE_API_KEY")
+	if !exists || ApiKey == "" {
+		t.Skip("SPICE_API_KEY not set, skipping cloud authentication test")
 	}
 
 	if err := spice.Init(WithApiKey(ApiKey), WithSpiceCloudAddress()); err != nil {
