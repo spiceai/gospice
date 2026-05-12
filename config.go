@@ -23,8 +23,8 @@ func LoadConfig() ClientConfig {
 
 func LoadLocalConfig() ClientConfig {
 	return ClientConfig{
-		HttpUrl:   getEnvOrDefault("SPICE_LOCAL_HTTP_URL", "http://localhost:8090"),
-		FlightUrl: getEnvOrDefault("SPICE_LOCAL_FLIGHT_URL", "grpc://localhost:50051"),
+		HttpUrl:   getEnvOrDefault("SPICE_LOCAL_HTTP_URL", "http://127.0.0.1:8090"),
+		FlightUrl: getEnvOrDefault("SPICE_LOCAL_FLIGHT_URL", "grpc://127.0.0.1:50051"),
 	}
 }
 
