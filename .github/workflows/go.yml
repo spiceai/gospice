@@ -77,31 +77,67 @@ jobs:
       - name: Init and start spice app (Windows)
         if: matrix.os == 'windows-latest'
         run: |
+          spice install
           spice init spice_qs
           cd spice_qs
           spice add spiceai/quickstart
-          Start-Process -FilePath "spice" -ArgumentList "run" -RedirectStandardOutput "spice.log" -RedirectStandardError "spice.err.log"
-          # Wait for Spice to be ready
-          Write-Host "Waiting for Spice to be ready..."
-          for ($i = 1; $i -le 60; $i++) {
-            try {
-              $response = Invoke-WebRequest -Uri "http://localhost:8090/v1/ready" -UseBasicParsing -ErrorAction Stop
-              if ($response.Content -match "ready") {
-                Write-Host "Spice is ready!"
-                break
-              }
-            } catch {
-              # Ignore errors, keep waiting
-            }
-            Write-Host "Waiting... ($i/60)"
-            Start-Sleep -Seconds 1
-          }
         shell: pwsh
 
       - name: Test
+        if: matrix.os != 'windows-latest'
         env:
           SPICE_API_KEY: ${{ secrets.SPICE_CLOUD_API_KEY }}
         run: go test -v ./...
+
+      - name: Start runtime and test (Windows)
+        if: matrix.os == 'windows-latest'
+        env:
+          SPICE_API_KEY: ${{ secrets.SPICE_CLOUD_API_KEY }}
+        run: |
+          $spicedPath = Join-Path $HOME ".spice\bin\spiced"
+          $spicedDir = Join-Path (Get-Location) "spice_qs"
+          $logPath = Join-Path $spicedDir "spice.log"
+          $errPath = Join-Path $spicedDir "spice.err.log"
+          $proc = Start-Process -FilePath $spicedPath -WorkingDirectory $spicedDir -RedirectStandardOutput $logPath -RedirectStandardError $errPath -PassThru
+          Write-Host "Started spiced PID=$($proc.Id)"
+          # Wait for Spice HTTP to be ready
+          Write-Host "Waiting for Spice HTTP to be ready..."
+          for ($i = 1; $i -le 60; $i++) {
+            try {
+              $response = Invoke-WebRequest -Uri "http://127.0.0.1:8090/v1/ready" -UseBasicParsing -ErrorAction Stop
+              if ($response.Content -match "ready") {
+                Write-Host "Spice HTTP is ready!"
+                break
+              }
+            } catch { }
+            Write-Host "Waiting HTTP... ($i/60)"
+            Start-Sleep -Seconds 1
+          }
+          # Wait for Spice Flight (gRPC) to be ready by checking the TCP port
+          Write-Host "Waiting for Spice Flight to be ready..."
+          for ($i = 1; $i -le 60; $i++) {
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            try {
+              $tcp.Connect("127.0.0.1", 50051)
+              if ($tcp.Connected) {
+                Write-Host "Spice Flight is ready!"
+                $tcp.Close()
+                break
+              }
+            } catch { }
+            finally { $tcp.Close() }
+            Write-Host "Waiting Flight... ($i/60)"
+            Start-Sleep -Seconds 1
+          }
+          try {
+            go test -v ./...
+            $testExit = $LASTEXITCODE
+          } finally {
+            Write-Host "Stopping spiced PID=$($proc.Id)"
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+          exit $testExit
+        shell: pwsh
 
       - name: Print Spice logs (Unix)
         if: always() && matrix.os != 'windows-latest'
