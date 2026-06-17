@@ -2,6 +2,7 @@ package gospice
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -129,6 +130,37 @@ func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...a
 		}
 	}
 
+	// Record the connection we are about to use so that, if it turns out to be
+	// stale, we only re-open it once even when many goroutines hit the failure
+	// at the same time.
+	used := c.adbcClient
+
+	rdr, err := c.execADBCWithBackoff(ctx, sql, params...)
+	if err != nil && isADBCAuthError(err) {
+		// The ADBC connection authenticates only once, when it is opened: a
+		// Basic-auth handshake yields a server-side session token that is then
+		// reused for every prepared statement on that connection. That session
+		// can be invalidated server-side (e.g. expired after a period of
+		// inactivity), after which the cached token is rejected on every
+		// subsequent request and the connection cannot recover on its own.
+		// Re-open the connection to perform a fresh handshake, then retry once.
+		if reinitErr := c.reinitADBC(used); reinitErr != nil {
+			return nil, fmt.Errorf("ADBC re-authentication failed: %w (original error: %v)", reinitErr, err)
+		}
+		rdr, err = c.execADBCWithBackoff(ctx, sql, params...)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return rdr, nil
+}
+
+// execADBCWithBackoff runs a parameterized ADBC query, retrying transient
+// (e.g. Unavailable / Internal) failures with the client's backoff policy.
+// Authentication failures are returned as-is (not retried here) so the caller
+// can re-establish the connection before retrying.
+func (c *SpiceClient) execADBCWithBackoff(ctx context.Context, sql string, params ...any) (array.RecordReader, error) {
 	var rdr array.RecordReader
 	err := backoff.Retry(func() error {
 		var err error
@@ -156,6 +188,45 @@ func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...a
 	}
 
 	return rdr, nil
+}
+
+// isADBCAuthError reports whether err indicates the ADBC connection's
+// credentials/session were rejected by the server (as opposed to a transient
+// or query error). Such failures are not recoverable on the existing
+// connection and require re-opening it to perform a fresh handshake.
+func isADBCAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var adbcErr adbc.Error
+	if errors.As(err, &adbcErr) {
+		if adbcErr.Code == adbc.StatusUnauthenticated || adbcErr.Code == adbc.StatusUnauthorized {
+			return true
+		}
+	}
+	// Fall back to matching the message in case the typed error is not
+	// propagated through the wrapping chain.
+	msg := err.Error()
+	return strings.Contains(msg, "Unauthenticated") || strings.Contains(msg, "Invalid credentials")
+}
+
+// reinitADBC closes and re-opens the ADBC connection so that the next query
+// performs a fresh authentication handshake. The stale argument is the
+// connection the caller observed failing; if another goroutine has already
+// replaced it, this is a no-op so the connection is only re-opened once.
+func (c *SpiceClient) reinitADBC(stale *ADBCClient) error {
+	c.adbcMu.Lock()
+	defer c.adbcMu.Unlock()
+
+	// Another caller may have already re-opened the connection we observed as
+	// stale; if so, reuse theirs rather than churning the connection again.
+	if c.adbcClient != stale {
+		return nil
+	}
+
+	_ = c.closeADBC()
+	c.adbcClient = nil
+	return c.initADBC()
 }
 
 // QueryWithParams is deprecated. Use SqlWithParams instead.
