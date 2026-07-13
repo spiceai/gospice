@@ -6,7 +6,7 @@ gospice v8 is a major version update that introduces:
 
 - New cleaner API with `Sql()` and `SqlWithParams()` methods
 - Health check methods `IsSpiceHealthy()` and `IsSpiceReady()`
-- Upgraded to Apache Arrow v18 and Go 1.25
+- Upgraded to Apache Arrow v18 and Go 1.24
 
 **Good news:** v8 is fully backward compatible with v7. Your existing `Query()` and `QueryWithParams()` calls will continue to work!
 
@@ -261,7 +261,7 @@ go get github.com/apache/arrow-go/v18@latest
 
 ### Go Version
 
-gospice v8 requires **Go 1.25+**
+gospice v8 requires **Go 1.24+**
 
 Check your Go version:
 

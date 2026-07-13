@@ -3,31 +3,36 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
-	gospice "github.com/spiceai/gospice/v8"
+	gospice "github.com/spiceai/gospice/v9"
 )
 
 func querySpiceCloud() {
+	apiKey := os.Getenv("SPICE_API_KEY")
+	if apiKey == "" {
+		fmt.Println("SPICE_API_KEY not set; skipping Spice Cloud example")
+		return
+	}
+
 	spice := gospice.NewSpiceClient()
 	defer func() { _ = spice.Close() }()
 
 	if err := spice.Init(
-		gospice.WithApiKey("3437|89d6b41cd0034cd68eea704f5e88779d"),
+		gospice.WithApiKey(apiKey),
 		gospice.WithSpiceCloudAddress(),
 	); err != nil {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 	}
 
-	reader, err := spice.Query(context.Background(), "SELECT * FROM eth.recent_blocks ORDER BY number LIMIT 10")
+	reader, err := spice.Sql(context.Background(), "SELECT * FROM eth.recent_blocks ORDER BY number LIMIT 10")
 	if err != nil {
 		panic(fmt.Errorf("error querying: %w", err))
 	}
 	defer reader.Release()
 
 	for reader.Next() {
-		record := reader.RecordBatch()
-		defer record.Release()
-		fmt.Println(record)
+		fmt.Println(reader.RecordBatch())
 	}
 }
 
@@ -39,16 +44,48 @@ func querySpiceLocal() {
 		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 	}
 
-	reader, err := spice.Query(context.Background(), "SELECT * FROM taxi_trips LIMIT 10")
+	reader, err := spice.Sql(context.Background(), "SELECT * FROM taxi_trips LIMIT 10")
 	if err != nil {
 		panic(fmt.Errorf("error querying: %w", err))
 	}
 	defer reader.Release()
 
 	for reader.Next() {
-		record := reader.RecordBatch()
-		defer record.Release()
-		fmt.Println(record)
+		fmt.Println(reader.RecordBatch())
+	}
+}
+
+// asyncQueryLocal demonstrates the async query API: Query submits the SQL for
+// background execution and returns a handle used to Wait for completion and
+// fetch Results. Async queries require the Spice runtime to be running in
+// distributed/scheduler mode (spiced --role scheduler with
+// runtime.scheduler.state_location configured).
+func asyncQueryLocal() {
+	spice := gospice.NewSpiceClient()
+	defer func() { _ = spice.Close() }()
+
+	if err := spice.Init(); err != nil {
+		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+	}
+
+	ctx := context.Background()
+
+	query, err := spice.Query(ctx, "SELECT * FROM taxi_trips LIMIT 10")
+	if err != nil {
+		fmt.Printf("async query submit failed (requires scheduler mode): %v\n", err)
+		return
+	}
+	fmt.Printf("submitted async query %s\n", query.ID())
+
+	reader, err := query.Results(ctx)
+	if err != nil {
+		fmt.Printf("async query failed: %v\n", err)
+		return
+	}
+	defer reader.Release()
+
+	for reader.Next() {
+		fmt.Println(reader.RecordBatch())
 	}
 }
 
@@ -80,5 +117,6 @@ func localDatasetRefresh() {
 func main() {
 	querySpiceCloud()
 	querySpiceLocal()
+	asyncQueryLocal()
 	localDatasetRefresh()
 }

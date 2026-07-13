@@ -2,7 +2,7 @@
 
 Golang SDK for Spice.ai
 
-See Go Docs at [pkg.go.dev/github.com/spiceai/gospice/v8](https://pkg.go.dev/github.com/spiceai/gospice/v8).
+See Go Docs at [pkg.go.dev/github.com/spiceai/gospice/v9](https://pkg.go.dev/github.com/spiceai/gospice/v9).
 
 For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 
@@ -11,13 +11,13 @@ For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 1. Get the gospice package.
 
 ```go
-go get github.com/spiceai/gospice/v8@latest
+go get github.com/spiceai/gospice/v9@latest
 ```
 
 1. Import the package.
 
 ```go
-import "github.com/spiceai/gospice/v8"
+import "github.com/spiceai/gospice/v9"
 ```
 
 1. Create a SpiceClient passing in your API key. Get your free API key at [spice.ai](https://spice.ai).
@@ -41,7 +41,7 @@ if err := spice.Init(
 1. Execute a query and get back an Apache Arrow Reader.
 
 ```go
-    reader, err := spice.Query(context.Background(), "SELECT 1")
+    reader, err := spice.Sql(context.Background(), "SELECT 1")
     if err != nil {
         panic(fmt.Errorf("error querying: %w", err))
     }
@@ -60,7 +60,7 @@ if err := spice.Init(
 
 ### Using Parameterized Queries (Recommended)
 
-gospice v8 supports parameterized queries using ADBC (Arrow Database Connectivity), which is the recommended approach for queries with parameters to prevent SQL injection:
+gospice v9 supports parameterized queries using ADBC (Arrow Database Connectivity), which is the recommended approach for queries with parameters to prevent SQL injection:
 
 ```go
 // Query with a single parameter
@@ -110,7 +110,7 @@ defer reader.Release()
 For precise control over Arrow types, use typed parameter constructors:
 
 ```go
-import "github.com/spiceai/gospice/v8"
+import "github.com/spiceai/gospice/v9"
 
 // Explicit type control for complex scenarios
 reader, err := spice.SqlWithParams(
@@ -161,9 +161,54 @@ if err := spice.Init(
 }
 ```
 
+## Async Queries
+
+`Query` and `QueryWithParams` submit SQL for **asynchronous** execution and return an `*AsyncQuery` handle. Async queries run in the background on the Spice runtime and are designed for long-running analytical and batch workloads. They require the runtime to be running in distributed/scheduler mode (`spiced --role scheduler` with `runtime.scheduler.state_location` configured).
+
+```go
+// Submit a query for async execution
+query, err := spice.Query(context.Background(), "SELECT * FROM taxi_trips")
+if err != nil {
+    panic(fmt.Errorf("error submitting query: %w", err))
+}
+fmt.Println("query id:", query.ID())
+
+// Wait for completion and fetch results as an Apache Arrow reader
+reader, err := query.Results(context.Background())
+if err != nil {
+    panic(fmt.Errorf("error fetching results: %w", err))
+}
+defer reader.Release()
+
+for reader.Next() {
+    fmt.Println(reader.RecordBatch())
+}
+```
+
+Parameterized async queries bind positional parameters (`$1`, `$2`, ...):
+
+```go
+query, err := spice.QueryWithParams(
+    context.Background(),
+    "SELECT * FROM taxi_trips WHERE trip_distance > $1 LIMIT $2",
+    5.0,
+    100,
+)
+```
+
+The `*AsyncQuery` handle provides:
+
+- `ID()` - the server-assigned query ID
+- `Status(ctx)` - poll the current status once (`PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `CLOSED`)
+- `Wait(ctx)` - block until the query reaches a terminal status
+- `Results(ctx)` - wait for completion and return results as an `array.RecordReader`
+- `Cancel(ctx)` - request cancellation
+
+For synchronous, real-time streaming queries, use `Sql` / `SqlWithParams` instead.
+
 ## Health Checks
 
-gospice v8 provides health check methods to verify Spice instance status before executing queries:
+gospice v9 provides health check methods to verify Spice instance status before executing queries:
 
 ```go
 // Check if Spice instance is healthy (unauthenticated)
@@ -202,12 +247,12 @@ spice.SetMaxRetries(5) // Setting to 0 will disable retries
 Retries are performed for connection and system internal errors. It is the SDK user's responsibility to properly
 handle other errors, for example RESOURCE_EXHAUSTED (HTTP 429).
 
-## Upgrading from v7 to v8
+## Upgrading from v8 to v9
 
-gospice v8 is fully backward compatible with v7. To upgrade:
+gospice v9 is a new major version with breaking changes. To upgrade:
 
 ```bash
-go get github.com/spiceai/gospice/v8@latest
+go get github.com/spiceai/gospice/v9@latest
 go mod tidy
 ```
 
@@ -215,19 +260,19 @@ Update your imports:
 
 ```go
 // Before
-import "github.com/spiceai/gospice/v7"
+import "github.com/spiceai/gospice/v8"
 
 // After
-import "github.com/spiceai/gospice/v8"
+import "github.com/spiceai/gospice/v9"
 ```
 
-**What's new in v8:**
+**Breaking changes in v9:**
 
-- New `Sql()` and `SqlWithParams()` methods for cleaner API (`.Query()` methods still work for backward compatibility)
-- `IsSpiceHealthy()` and `IsSpiceReady()` health check methods
-- Apache Arrow v18 and Go 1.25 support
+- `Query()` and `QueryWithParams()` are now **asynchronous** and return an `*AsyncQuery` handle instead of an `array.RecordReader`. Use the handle's `Wait()` / `Results()` methods (see [Async Queries](#async-queries)), or switch to the synchronous `Sql()` / `SqlWithParams()` methods.
+- Minimum Go version is now **1.25** (was 1.24).
+- Upgraded to Apache Arrow v18.6.0 and ADBC v1.11.0, matching the Spice.ai runtime's DataFusion 54.
 
-See [UPGRADE_V7_TO_V8.md](UPGRADE_V7_TO_V8.md) for detailed migration guide.
+See [UPGRADE_V8_TO_V9.md](UPGRADE_V8_TO_V9.md) for the detailed migration guide.
 
 ## Testing and Benchmarking
 
