@@ -99,10 +99,21 @@ jobs:
         env:
           SPICE_API_KEY: ${{ secrets.SPICE_CLOUD_API_KEY }}
         run: |
+          # Retry helper for flaky network installs.
+          retry() {
+            local n
+            for n in 1 2 3; do
+              if "$@"; then return 0; fi
+              echo "::warning::attempt ${n}/3 failed: $*"
+              sleep 5
+            done
+            return 1
+          }
+
           # Install a current Go toolchain inside the WSL distribution.
-          GO_VER="$(curl -sSL 'https://go.dev/VERSION?m=text' | head -1)"
+          GO_VER="$(curl -fsSL --retry 3 'https://go.dev/VERSION?m=text' | head -1)"
           echo "Installing ${GO_VER} in WSL"
-          curl -sSL "https://go.dev/dl/${GO_VER}.linux-amd64.tar.gz" -o /tmp/go.tgz
+          curl -fsSL --retry 3 "https://go.dev/dl/${GO_VER}.linux-amd64.tar.gz" -o /tmp/go.tgz
           rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz
           export PATH="/usr/local/go/bin:${HOME}/.spice/bin:${PATH}"
           go version
@@ -110,11 +121,16 @@ jobs:
           # Enter the checked-out repo (Windows workspace, mounted under /mnt).
           cd "$(wslpath -u "${GITHUB_WORKSPACE}")"
 
-          # Install and start the Spice runtime.
-          curl https://install.spiceai.org | /bin/bash
-          spice install
+          # Install the Spice CLI and runtime (downloads can be flaky, so retry).
+          retry bash -c 'curl -sSL https://install.spiceai.org | /bin/bash'
+          retry spice install
+
+          # Start a quickstart runtime.
           spice init spice_qs
-          ( cd spice_qs && spice add spiceai/quickstart && nohup spice run > spice.log 2>&1 & )
+          cd spice_qs
+          retry spice add spiceai/quickstart
+          nohup spice run > spice.log 2>&1 &
+          cd ..
 
           echo "Waiting for Spice to be ready..."
           for i in $(seq 1 90); do
