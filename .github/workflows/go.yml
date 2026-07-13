@@ -48,16 +48,36 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl https://install.spiceai.org | /bin/bash
+          # Retry helper for flaky network installs.
+          retry() {
+            local n
+            for n in 1 2 3; do
+              if "$@"; then return 0; fi
+              echo "::warning::attempt ${n}/3 failed: $*"
+              sleep 5
+            done
+            return 1
+          }
+          retry bash -c 'curl -sSL https://install.spiceai.org | /bin/bash'
           echo "$HOME/.spice/bin" >> $GITHUB_PATH
-          $HOME/.spice/bin/spice install
+          retry "$HOME/.spice/bin/spice" install
 
       - name: Init and start spice app (Unix)
         if: matrix.os != 'windows-latest'
         run: |
+          # Retry helper for flaky network installs.
+          retry() {
+            local n
+            for n in 1 2 3; do
+              if "$@"; then return 0; fi
+              echo "::warning::attempt ${n}/3 failed: $*"
+              sleep 5
+            done
+            return 1
+          }
           spice init spice_qs
           cd spice_qs
-          spice add spiceai/quickstart
+          retry spice add spiceai/quickstart
           spice run &> spice.log &
           # Wait for Spice to be ready
           echo "Waiting for Spice to be ready..."
