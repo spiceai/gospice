@@ -225,7 +225,7 @@ import "github.com/spiceai/gospice/v8"
 
 - New `Sql()` and `SqlWithParams()` methods for cleaner API (`.Query()` methods still work for backward compatibility)
 - `IsSpiceHealthy()` and `IsSpiceReady()` health check methods
-- Apache Arrow v18 and Go 1.24 support
+- Apache Arrow v18 and Go 1.25 support
 
 See [UPGRADE_V7_TO_V8.md](UPGRADE_V7_TO_V8.md) for detailed migration guide.
 
