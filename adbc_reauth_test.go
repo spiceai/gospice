@@ -36,6 +36,17 @@ func TestIsADBCAuthError(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "pointer adbc unauthorized",
+			err:  &adbc.Error{Code: adbc.StatusUnauthorized, Msg: "[FlightSQL] forbidden"},
+			want: true,
+		},
+		{
+			name: "wrapped pointer adbc unauthenticated",
+			err: fmt.Errorf("error preparing statement: %w",
+				&adbc.Error{Code: adbc.StatusUnauthenticated, Msg: "[FlightSQL] Invalid credentials"}),
+			want: true,
+		},
+		{
 			name: "adbc internal is not an auth error",
 			err:  adbc.Error{Code: adbc.StatusInternal, Msg: "boom"},
 			want: false,
