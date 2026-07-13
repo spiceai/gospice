@@ -2,11 +2,13 @@ package gospice
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +46,10 @@ type SpiceClient struct {
 	backoffPolicy backoff.BackOff
 	maxRetries    uint
 	userAgent     string
+
+	tlsClientCertFile string
+	tlsClientKeyFile  string
+	tlsRootCertFile   string
 }
 
 // NewSpiceClient creates a new SpiceClient
@@ -116,6 +122,32 @@ func WithSpiceCloudAddress() SpiceClientModifier {
 	}
 }
 
+// WithTLSClientCertificate configures the client to present a client certificate
+// during the TLS handshake for mutual TLS (mTLS) authentication.
+// Both certFile and keyFile must be PEM-encoded.
+func WithTLSClientCertificate(certFile, keyFile string) SpiceClientModifier {
+	return func(c *SpiceClient) error {
+		if certFile == "" || keyFile == "" {
+			return fmt.Errorf("both certFile and keyFile are required for mTLS")
+		}
+		c.tlsClientCertFile = certFile
+		c.tlsClientKeyFile = keyFile
+		return nil
+	}
+}
+
+// WithTLSRootCertificate configures the client to use a custom CA certificate
+// file for server verification instead of (in addition to) the system certificate store.
+func WithTLSRootCertificate(caFile string) SpiceClientModifier {
+	return func(c *SpiceClient) error {
+		if caFile == "" {
+			return fmt.Errorf("caFile is required")
+		}
+		c.tlsRootCertFile = caFile
+		return nil
+	}
+}
+
 // Init initializes the SpiceClient
 func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 	for _, opt := range opts {
@@ -130,12 +162,41 @@ func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 		return fmt.Errorf("error getting system cert pool: %w", err)
 	}
 
+	if c.tlsRootCertFile != "" {
+		caPem, err := os.ReadFile(c.tlsRootCertFile)
+		if err != nil {
+			return fmt.Errorf("error reading TLS root certificate '%s': %w", c.tlsRootCertFile, err)
+		}
+		if !systemCertPool.AppendCertsFromPEM(caPem) {
+			return fmt.Errorf("failed to append CA certificate from '%s'", c.tlsRootCertFile)
+		}
+	}
+
 	flightClient, err := c.createClient(c.flightAddress, systemCertPool)
 	if err != nil {
 		return fmt.Errorf("error creating Spice Flight client: %w", err)
 	}
 
 	c.flightClient = flightClient
+
+	// Update the HTTP client transport with the same TLS configuration
+	// (custom CA and/or client certificate) used by the Flight client.
+	httpTlsConfig := &tls.Config{
+		RootCAs:    systemCertPool,
+		MinVersion: tls.VersionTLS12,
+	}
+	if c.tlsClientCertFile != "" && c.tlsClientKeyFile != "" {
+		clientCert, err := tls.LoadX509KeyPair(c.tlsClientCertFile, c.tlsClientKeyFile)
+		if err != nil {
+			return fmt.Errorf("error loading client certificate for HTTP mTLS: %w", err)
+		}
+		httpTlsConfig.Certificates = []tls.Certificate{clientCert}
+	}
+	c.httpClient.Transport = &http.Transport{
+		MaxIdleConnsPerHost: 10,
+		DisableCompression:  false,
+		TLSClientConfig:     httpTlsConfig,
+	}
 
 	// Initialize ADBC client - non-fatal, will be initialized lazily if needed
 	// This allows health checks to work even if ADBC connection fails initially
@@ -228,7 +289,20 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 		address = strings.TrimPrefix(address, "grpc://")
 		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	} else {
-		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(systemCertPool, "")))
+		tlsConfig := &tls.Config{
+			RootCAs:    systemCertPool,
+			MinVersion: tls.VersionTLS12,
+		}
+
+		if c.tlsClientCertFile != "" && c.tlsClientKeyFile != "" {
+			clientCert, err := tls.LoadX509KeyPair(c.tlsClientCertFile, c.tlsClientKeyFile)
+			if err != nil {
+				return nil, fmt.Errorf("error loading client certificate for mTLS: %w", err)
+			}
+			tlsConfig.Certificates = []tls.Certificate{clientCert}
+		}
+
+		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	}
 
 	client, err := flight.NewClientWithMiddleware(
