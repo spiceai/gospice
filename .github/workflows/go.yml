@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go-version: ['1.24', '1.25']
+        go-version: ['1.25', '1.26']
     steps:
       - uses: actions/checkout@v5
 
@@ -31,10 +31,17 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.1
+          version: v2.12
 
       - name: Build
         run: go build -v ./...
+
+      # The Spice runtime cannot be installed or run natively on Windows, so the
+      # Windows job runs the runtime-free unit tests natively and defers the
+      # runtime install + integration tests to WSL (see the WSL steps below).
+      - name: Unit tests (Windows native)
+        if: matrix.os == 'windows-latest'
+        run: go test -v -run 'TestUserAgent|TestPrependedUserAgent|TestInferArrowType|TestAppendValueToBuilder|TestComprehensiveArrowTypes|TestParamType|TestTypedParamInference|TestExtendedArrowTypes' ./...
 
       - name: Install Spice (https://install.spiceai.org) (Linux)
         if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
@@ -44,17 +51,6 @@ jobs:
           curl https://install.spiceai.org | /bin/bash
           echo "$HOME/.spice/bin" >> $GITHUB_PATH
           $HOME/.spice/bin/spice install
-
-      - name: install Spice (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          curl -L "https://install.spiceai.org/Install.ps1" -o Install.ps1 && PowerShell -ExecutionPolicy Bypass -File ./Install.ps1
-
-      - name: add Spice bin to PATH (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          Add-Content $env:GITHUB_PATH (Join-Path $HOME ".spice\bin")
-        shell: pwsh
 
       - name: Init and start spice app (Unix)
         if: matrix.os != 'windows-latest'
@@ -74,70 +70,79 @@ jobs:
             sleep 1
           done
 
-      - name: Init and start spice app (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          spice install
-          spice init spice_qs
-          cd spice_qs
-          spice add spiceai/quickstart
-        shell: pwsh
-
       - name: Test
         if: matrix.os != 'windows-latest'
         env:
           SPICE_API_KEY: ${{ secrets.SPICE_CLOUD_API_KEY }}
         run: go test -v ./...
 
-      - name: Start runtime and test (Windows)
+      # Native Windows local runtime is unsupported ("Open WSL and run the Linux
+      # Spice CLI there instead"), so the integration tests run inside WSL against
+      # a Linux Spice runtime.
+      - name: Set up WSL (Windows)
         if: matrix.os == 'windows-latest'
+        uses: Vampire/setup-wsl@v7
+        with:
+          # Ubuntu 24.04 (glibc 2.39) — the Spice binary requires glibc >= 2.38.
+          distribution: Ubuntu-24.04
+          additional-packages: curl ca-certificates git
+
+      # Forward the workspace path and API key into every wsl-bash step.
+      - name: Configure WSLENV (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: echo "WSLENV=GITHUB_WORKSPACE:SPICE_API_KEY" >> "$GITHUB_ENV"
+
+      - name: Install Spice and run integration tests in WSL (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: wsl-bash {0}
         env:
           SPICE_API_KEY: ${{ secrets.SPICE_CLOUD_API_KEY }}
         run: |
-          $spicedPath = Join-Path $HOME ".spice\bin\spiced"
-          $spicedDir = Join-Path (Get-Location) "spice_qs"
-          $logPath = Join-Path $spicedDir "spice.log"
-          $errPath = Join-Path $spicedDir "spice.err.log"
-          $proc = Start-Process -FilePath $spicedPath -WorkingDirectory $spicedDir -RedirectStandardOutput $logPath -RedirectStandardError $errPath -PassThru
-          Write-Host "Started spiced PID=$($proc.Id)"
-          # Wait for Spice HTTP to be ready
-          Write-Host "Waiting for Spice HTTP to be ready..."
-          for ($i = 1; $i -le 60; $i++) {
-            try {
-              $response = Invoke-WebRequest -Uri "http://127.0.0.1:8090/v1/ready" -UseBasicParsing -ErrorAction Stop
-              if ($response.Content -match "ready") {
-                Write-Host "Spice HTTP is ready!"
-                break
-              }
-            } catch { }
-            Write-Host "Waiting HTTP... ($i/60)"
-            Start-Sleep -Seconds 1
+          # Retry helper for flaky network installs.
+          retry() {
+            local n
+            for n in 1 2 3; do
+              if "$@"; then return 0; fi
+              echo "::warning::attempt ${n}/3 failed: $*"
+              sleep 5
+            done
+            return 1
           }
-          # Wait for Spice Flight (gRPC) to be ready by checking the TCP port
-          Write-Host "Waiting for Spice Flight to be ready..."
-          for ($i = 1; $i -le 60; $i++) {
-            $tcp = New-Object System.Net.Sockets.TcpClient
-            try {
-              $tcp.Connect("127.0.0.1", 50051)
-              if ($tcp.Connected) {
-                Write-Host "Spice Flight is ready!"
-                $tcp.Close()
-                break
-              }
-            } catch { }
-            finally { $tcp.Close() }
-            Write-Host "Waiting Flight... ($i/60)"
-            Start-Sleep -Seconds 1
-          }
-          try {
-            go test -v ./...
-            $testExit = $LASTEXITCODE
-          } finally {
-            Write-Host "Stopping spiced PID=$($proc.Id)"
-            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-          }
-          exit $testExit
-        shell: pwsh
+
+          # Install a current Go toolchain inside the WSL distribution.
+          GO_VER="$(curl -fsSL --retry 3 'https://go.dev/VERSION?m=text' | head -1)"
+          echo "Installing ${GO_VER} in WSL"
+          curl -fsSL --retry 3 "https://go.dev/dl/${GO_VER}.linux-amd64.tar.gz" -o /tmp/go.tgz
+          rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz
+          export PATH="/usr/local/go/bin:${HOME}/.spice/bin:${PATH}"
+          go version
+
+          # Enter the checked-out repo (Windows workspace, mounted under /mnt).
+          cd "$(wslpath -u "${GITHUB_WORKSPACE}")"
+
+          # Install the Spice CLI and runtime (downloads can be flaky, so retry).
+          retry bash -c 'curl -sSL https://install.spiceai.org | /bin/bash'
+          retry spice install
+
+          # Start a quickstart runtime.
+          spice init spice_qs
+          cd spice_qs
+          retry spice add spiceai/quickstart
+          nohup spice run > spice.log 2>&1 &
+          cd ..
+
+          echo "Waiting for Spice to be ready..."
+          for i in $(seq 1 90); do
+            if curl -fs http://localhost:8090/v1/ready >/dev/null 2>&1; then
+              echo "Spice is ready!"
+              break
+            fi
+            echo "Waiting... ($i/90)"
+            sleep 2
+          done
+
+          go test -v ./...
 
       - name: Print Spice logs (Unix)
         if: always() && matrix.os != 'windows-latest'
@@ -145,11 +150,10 @@ jobs:
           echo "=== Spice Runtime Logs ==="
           cat spice_qs/spice.log || echo "No log file found"
 
-      - name: Print Spice logs (Windows)
+      - name: Print Spice logs (WSL) (Windows)
         if: always() && matrix.os == 'windows-latest'
+        shell: wsl-bash {0}
         run: |
-          Write-Host "=== Spice Runtime Logs (stdout) ==="
-          Get-Content spice_qs\spice.log -ErrorAction SilentlyContinue
-          Write-Host "=== Spice Runtime Logs (stderr) ==="
-          Get-Content spice_qs\spice.err.log -ErrorAction SilentlyContinue
-        shell: pwsh
+          cd "$(wslpath -u "${GITHUB_WORKSPACE:-}" 2>/dev/null)" 2>/dev/null || true
+          echo "=== Spice Runtime Logs (WSL) ==="
+          cat spice_qs/spice.log 2>/dev/null || echo "No log file found"

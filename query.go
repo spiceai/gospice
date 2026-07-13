@@ -44,12 +44,6 @@ func (c *SpiceClient) Sql(ctx context.Context, sql string) (array.RecordReader, 
 	return rdr, nil
 }
 
-// Query is deprecated. Use Sql instead.
-// Kept for backward compatibility with v7.
-func (c *SpiceClient) Query(ctx context.Context, sql string) (array.RecordReader, error) {
-	return c.Sql(ctx, sql)
-}
-
 func queryInternal(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
 	if client == nil {
 		return nil, fmt.Errorf("flight client is not initialized")

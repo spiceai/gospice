@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const GO_SPICE_VERSION = "8.0.0"
+const GO_SPICE_VERSION = "9.0.0"
 
 type ClientConfig struct {
 	HttpUrl   string `json:"http_url,omitempty"`
