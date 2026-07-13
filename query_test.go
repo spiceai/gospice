@@ -25,7 +25,7 @@ func TestBasicQuery(t *testing.T) {
 
 	t.Run("Recent Ethereum Blocks", func(t *testing.T) {
 		t.Skip()
-		reader, err := spice.Query(context.Background(), "SELECT number, \"timestamp\", hash FROM eth.recent_blocks ORDER BY number LIMIT 10")
+		reader, err := spice.Sql(context.Background(), "SELECT number, \"timestamp\", hash FROM eth.recent_blocks ORDER BY number LIMIT 10")
 		if err != nil {
 			t.Fatalf("error querying: %v", err)
 		}
@@ -113,7 +113,7 @@ func TestLocalRuntime(t *testing.T) {
 	}
 
 	t.Run("Query Local Dataset", func(t *testing.T) {
-		reader, err := spice.Query(ctx, "select * from taxi_trips limit 3;")
+		reader, err := spice.Sql(ctx, "select * from taxi_trips limit 3;")
 		if err != nil {
 			t.Fatalf("error querying: %v", err)
 		}

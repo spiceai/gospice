@@ -139,7 +139,7 @@ package main
 import (
     "context"
     "fmt"
-    gospice "github.com/spiceai/gospice/v8"
+    gospice "github.com/spiceai/gospice/v9"
 )
 
 func main() {
@@ -179,7 +179,7 @@ package main
 import (
     "context"
     "github.com/apache/arrow-go/v18/arrow"
-    gospice "github.com/spiceai/gospice/v8"
+    gospice "github.com/spiceai/gospice/v9"
 )
 
 func main() {
@@ -214,7 +214,7 @@ import (
     "context"
     "time"
     "github.com/apache/arrow-go/v18/arrow"
-    gospice "github.com/spiceai/gospice/v8"
+    gospice "github.com/spiceai/gospice/v9"
 )
 
 func main() {
