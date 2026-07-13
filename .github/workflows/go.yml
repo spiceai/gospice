@@ -82,7 +82,9 @@ jobs:
           # Wait for Spice to be ready
           echo "Waiting for Spice to be ready..."
           for i in {1..60}; do
-            if curl -s http://localhost:8090/v1/ready 2>/dev/null | grep -q "ready"; then
+            # -f fails on non-2xx; /v1/ready returns 200 only once datasets are
+            # loaded. (A substring `grep "ready"` also matches "not ready".)
+            if curl -fs http://localhost:8090/v1/ready >/dev/null 2>&1; then
               echo "Spice is ready!"
               break
             fi
