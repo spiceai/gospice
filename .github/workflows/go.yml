@@ -83,8 +83,15 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: Vampire/setup-wsl@v7
         with:
-          distribution: Ubuntu-22.04
+          # Ubuntu 24.04 (glibc 2.39) — the Spice binary requires glibc >= 2.38.
+          distribution: Ubuntu-24.04
           additional-packages: curl ca-certificates git
+
+      # Forward the workspace path and API key into every wsl-bash step.
+      - name: Configure WSLENV (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: echo "WSLENV=GITHUB_WORKSPACE:SPICE_API_KEY" >> "$GITHUB_ENV"
 
       - name: Install Spice and run integration tests in WSL (Windows)
         if: matrix.os == 'windows-latest'
@@ -131,6 +138,6 @@ jobs:
         if: always() && matrix.os == 'windows-latest'
         shell: wsl-bash {0}
         run: |
-          cd "$(wslpath -u "${GITHUB_WORKSPACE}")" 2>/dev/null || true
+          cd "$(wslpath -u "${GITHUB_WORKSPACE:-}" 2>/dev/null)" 2>/dev/null || true
           echo "=== Spice Runtime Logs (WSL) ==="
           cat spice_qs/spice.log 2>/dev/null || echo "No log file found"
