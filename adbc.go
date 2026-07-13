@@ -2,6 +2,7 @@ package gospice
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -122,17 +123,60 @@ func (c *SpiceClient) closeADBC() error {
 //	reader, err := client.SqlWithParams(ctx, "SELECT * FROM table WHERE id = $1 AND name = $2", 123, "test")
 //	reader, err := client.SqlWithParams(ctx, "SELECT * FROM table WHERE ts = $1", TimestampParam(ts, arrow.Microsecond, "UTC"))
 func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...any) (array.RecordReader, error) {
-	if c.adbcClient == nil {
-		// Try lazy initialization
-		if err := c.initADBC(); err != nil {
-			return nil, fmt.Errorf("ADBC client is not initialized and failed to initialize: %w", err)
-		}
+	// Capture the ADBC connection to use under the mutex so a concurrent
+	// re-authentication cannot swap it out from under this query.
+	used, err := c.ensureADBC()
+	if err != nil {
+		return nil, fmt.Errorf("ADBC client is not initialized and failed to initialize: %w", err)
 	}
 
+	rdr, err := c.execADBCWithBackoff(ctx, used, sql, params...)
+	if err != nil && isADBCAuthError(err) {
+		// The ADBC connection authenticates only once, when it is opened: a
+		// Basic-auth handshake yields a server-side session token that is then
+		// reused for every prepared statement on that connection. That session
+		// can be invalidated server-side (e.g. expired after a period of
+		// inactivity), after which the cached token is rejected on every
+		// subsequent request and the connection cannot recover on its own.
+		// Re-open the connection to perform a fresh handshake, then retry once.
+		fresh, reinitErr := c.reinitADBC(used)
+		if reinitErr != nil {
+			return nil, fmt.Errorf("ADBC re-authentication failed: %w (original error: %v)", reinitErr, err)
+		}
+		rdr, err = c.execADBCWithBackoff(ctx, fresh, sql, params...)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return rdr, nil
+}
+
+// ensureADBC returns the current ADBC connection, lazily initializing it if
+// necessary. The read and initialization run under adbcMu so the returned
+// pointer is a consistent snapshot even while another goroutine may be
+// re-authenticating via reinitADBC.
+func (c *SpiceClient) ensureADBC() (*ADBCClient, error) {
+	c.adbcMu.Lock()
+	defer c.adbcMu.Unlock()
+
+	if c.adbcClient == nil {
+		if err := c.initADBC(); err != nil {
+			return nil, err
+		}
+	}
+	return c.adbcClient, nil
+}
+
+// execADBCWithBackoff runs a parameterized ADBC query, retrying transient
+// (e.g. Unavailable / Internal) failures with the client's backoff policy.
+// Authentication failures are returned as-is (not retried here) so the caller
+// can re-establish the connection before retrying.
+func (c *SpiceClient) execADBCWithBackoff(ctx context.Context, client *ADBCClient, sql string, params ...any) (array.RecordReader, error) {
 	var rdr array.RecordReader
 	err := backoff.Retry(func() error {
 		var err error
-		rdr, err = c.queryADBCWithParams(ctx, sql, params...)
+		rdr, err = c.queryADBCWithParams(ctx, client, sql, params...)
 		if err != nil {
 			st, ok := status.FromError(err)
 			if ok {
@@ -158,14 +202,69 @@ func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...a
 	return rdr, nil
 }
 
+// isADBCAuthError reports whether err indicates the ADBC connection's
+// credentials/session were rejected by the server (as opposed to a transient
+// or query error). Such failures are not recoverable on the existing
+// connection and require re-opening it to perform a fresh handshake.
+func isADBCAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Match both the value and pointer forms of adbc.Error, since the driver
+	// or wrapping layers may return either.
+	var adbcErr adbc.Error
+	if errors.As(err, &adbcErr) && isADBCAuthStatus(adbcErr.Code) {
+		return true
+	}
+	var adbcErrPtr *adbc.Error
+	if errors.As(err, &adbcErrPtr) && adbcErrPtr != nil && isADBCAuthStatus(adbcErrPtr.Code) {
+		return true
+	}
+	// Fall back to matching the message in case the typed error is not
+	// propagated through the wrapping chain.
+	msg := err.Error()
+	return strings.Contains(msg, "Unauthenticated") || strings.Contains(msg, "Invalid credentials")
+}
+
+// isADBCAuthStatus reports whether an ADBC status code indicates the server
+// rejected the connection's credentials or session.
+func isADBCAuthStatus(code adbc.Status) bool {
+	return code == adbc.StatusUnauthenticated || code == adbc.StatusUnauthorized
+}
+
+// reinitADBC closes and re-opens the ADBC connection so that the next query
+// performs a fresh authentication handshake, returning the connection to use
+// for the retry. The stale argument is the connection the caller observed
+// failing; if another goroutine has already replaced it with a live one, that
+// connection is reused so the connection is only re-opened once.
+func (c *SpiceClient) reinitADBC(stale *ADBCClient) (*ADBCClient, error) {
+	c.adbcMu.Lock()
+	defer c.adbcMu.Unlock()
+
+	// Another caller may have already re-opened the connection we observed as
+	// stale; if so, reuse theirs rather than churning the connection again.
+	if c.adbcClient != stale && c.adbcClient != nil {
+		return c.adbcClient, nil
+	}
+
+	if closeErr := c.closeADBC(); closeErr != nil {
+		log.Printf("warning: failed to close stale ADBC connection during re-authentication: %v", closeErr)
+	}
+	c.adbcClient = nil
+	if err := c.initADBC(); err != nil {
+		return nil, err
+	}
+	return c.adbcClient, nil
+}
+
 // queryADBCWithParams executes a parameterized query using ADBC with prepare/execute pattern
-func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, params ...any) (array.RecordReader, error) {
-	if c.adbcClient == nil || c.adbcClient.conn == nil {
+func (c *SpiceClient) queryADBCWithParams(ctx context.Context, client *ADBCClient, sql string, params ...any) (array.RecordReader, error) {
+	if client == nil || client.conn == nil {
 		return nil, fmt.Errorf("ADBC connection is not initialized")
 	}
 
 	// Create a prepared statement
-	stmt, err := c.adbcClient.conn.NewStatement()
+	stmt, err := client.conn.NewStatement()
 	if err != nil {
 		return nil, fmt.Errorf("error creating statement: %w", err)
 	}
@@ -188,7 +287,7 @@ func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, param
 
 	// Bind parameters if provided
 	if len(params) > 0 {
-		if err := c.bindParameters(stmt, params...); err != nil {
+		if err := c.bindParameters(client, stmt, params...); err != nil {
 			return nil, fmt.Errorf("error binding parameters: %w", err)
 		}
 	}
@@ -203,7 +302,7 @@ func (c *SpiceClient) queryADBCWithParams(ctx context.Context, sql string, param
 }
 
 // bindParameters binds parameters to an ADBC statement
-func (c *SpiceClient) bindParameters(stmt adbc.Statement, params ...any) error {
+func (c *SpiceClient) bindParameters(client *ADBCClient, stmt adbc.Statement, params ...any) error {
 	if len(params) == 0 {
 		return nil
 	}
@@ -249,7 +348,7 @@ func (c *SpiceClient) bindParameters(stmt adbc.Statement, params ...any) error {
 	schema := arrow.NewSchema(fields, nil)
 
 	// Create a record builder using the reusable allocator
-	bldr := array.NewRecordBuilder(c.adbcClient.mem, schema)
+	bldr := array.NewRecordBuilder(client.mem, schema)
 	defer bldr.Release()
 
 	// Add values to the builders
