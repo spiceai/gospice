@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -40,6 +41,7 @@ type SpiceClient struct {
 
 	flightClient  flight.Client
 	adbcClient    *ADBCClient
+	adbcMu        sync.Mutex // guards re-initialization of adbcClient
 	httpClient    http.Client
 	backoffPolicy backoff.BackOff
 	maxRetries    uint
