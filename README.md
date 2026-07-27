@@ -206,6 +206,55 @@ The `*AsyncQuery` handle provides:
 
 For synchronous, real-time streaming queries, use `Sql` / `SqlWithParams` instead.
 
+## Search
+
+`Search` runs vector similarity, keyword, and hybrid search against datasets that have an
+embedding column and a loaded embedding model.
+
+```go
+resp, err := spice.Search(context.Background(), &gospice.SearchRequest{
+    Text:     "tickets to Tokyo",
+    Datasets: []string{"app_messages"},
+    Limit:    3,
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("%d matches in %dms\n", len(resp.Results), resp.DurationMs)
+for _, match := range resp.Results {
+    fmt.Println(match.Dataset, match.Score, match.PrimaryKey, match.Matches)
+}
+```
+
+Only `Text` is required. `Datasets` restricts the search — leave it empty to search every
+dataset with an embedding column. `Limit` caps matches per dataset, `Where` applies an SQL
+predicate before the search, and `AdditionalColumns` names extra columns to return:
+
+```go
+resp, err := spice.Search(ctx, &gospice.SearchRequest{
+    Text:              "tickets to Tokyo",
+    Datasets:          []string{"app_messages"},
+    Where:             "city = 'Tokyo'",
+    AdditionalColumns: []string{"timestamp"},
+})
+```
+
+Setting `Keywords` pre-filters the embedding column with a lexical search before the vector
+search runs, making the search hybrid:
+
+```go
+resp, err := spice.Search(ctx, &gospice.SearchRequest{
+    Text:     "tickets to Tokyo",
+    Keywords: []string{"plane", "tickets"},
+})
+```
+
+Each `SearchMatch` carries the `Dataset` it was found in, its similarity `Score`, the matched
+column values in `Matches`, the row's `PrimaryKey`, the columns requested via
+`AdditionalColumns` in `Data`, and any `Metadata`. The runtime omits the last three when
+empty, so they decode to `nil` — reading a key from a nil map is safe in Go.
+
 ## Health Checks
 
 gospice v9 provides health check methods to verify Spice instance status before executing queries:
