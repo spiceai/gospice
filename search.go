@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // SearchRequest describes a search against one or more datasets.
@@ -70,9 +71,29 @@ type SearchResponse struct {
 	DurationMs int64 `json:"duration_ms"`
 }
 
-// searchErrorResponse is the runtime's error body for a failed search.
+// searchErrorResponse is the runtime's JSON error body for a failed search.
 type searchErrorResponse struct {
 	Error string `json:"error"`
+}
+
+// searchErrorMessage extracts the message to report from a failed search response.
+//
+// The runtime answers some failures with a JSON {"error": "..."} body and others —
+// "Search cannot be run on X because it has no embeddings or full text search
+// indexes", for instance — with plain text, so both shapes have to be handled or the
+// part that tells the caller what to fix is lost.
+func searchErrorMessage(body []byte) string {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return "(no response body)"
+	}
+
+	var errResp searchErrorResponse
+	if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
+		return errResp.Error
+	}
+
+	return trimmed
 }
 
 // Search runs a vector similarity, keyword, or hybrid search against datasets
@@ -130,11 +151,7 @@ func (c *SpiceClient) Search(ctx context.Context, req *SearchRequest) (*SearchRe
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		var errResp searchErrorResponse
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return nil, fmt.Errorf("search failed with status=%d: %s", resp.StatusCode, errResp.Error)
-		}
-		return nil, fmt.Errorf("POST %s failed with status=%d", url, resp.StatusCode)
+		return nil, fmt.Errorf("search failed with status=%d: %s", resp.StatusCode, searchErrorMessage(respBody))
 	}
 
 	var searchResp SearchResponse

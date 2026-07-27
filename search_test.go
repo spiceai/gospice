@@ -222,19 +222,46 @@ func TestSearchValidation(t *testing.T) {
 }
 
 func TestSearchSurfacesRuntimeError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(`{"error":"No data sources provided"}`))
-	}))
-	defer srv.Close()
-
-	_, err := newTestSearchClient(srv).Search(context.Background(), &SearchRequest{Text: "x"})
-	if err == nil {
-		t.Fatal("expected an error")
+	// The runtime answers some failures with JSON and others with plain text. Both
+	// carry the part that tells the caller what to fix, so both must survive.
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "json error body",
+			body: `{"error":"No data sources provided"}`,
+			want: "No data sources provided",
+		},
+		{
+			name: "plain text body",
+			body: "Search cannot be run on nation because it has no embeddings or full text search indexes.",
+			want: "no embeddings or full text search indexes",
+		},
+		{
+			name: "empty body",
+			body: "",
+			want: "(no response body)",
+		},
 	}
-	// The runtime's message is what tells the user what to fix.
-	if !strings.Contains(err.Error(), "No data sources provided") {
-		t.Errorf("error = %q, want it to carry the runtime's message", err.Error())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			_, err := newTestSearchClient(srv).Search(context.Background(), &SearchRequest{Text: "x"})
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.want)
+			}
+		})
 	}
 }
 
