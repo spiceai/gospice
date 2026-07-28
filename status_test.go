@@ -4,16 +4,21 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
 func TestRuntimeStatus(t *testing.T) {
 	tests := []struct {
-		name       string
+		name string
+		// statusCode and body are what the stub runtime returns.
 		statusCode int
 		body       string
 		wantErr    bool
-		want       []ConnectionDetails
+		// wantErrContains, when set, must appear in the error message so a caller can
+		// tell 401 from 500 without decoding the numeric code themselves.
+		wantErrContains string
+		want            []ConnectionDetails
 	}{
 		{
 			name:       "all components reported",
@@ -40,10 +45,18 @@ func TestRuntimeStatus(t *testing.T) {
 			},
 		},
 		{
-			name:       "non-200 is an error",
-			statusCode: http.StatusInternalServerError,
-			body:       "boom",
-			wantErr:    true,
+			name:            "non-200 is an error naming the status",
+			statusCode:      http.StatusInternalServerError,
+			body:            "boom",
+			wantErr:         true,
+			wantErrContains: "status=500 Internal Server Error",
+		},
+		{
+			name:            "unauthorized is distinguishable from a server error",
+			statusCode:      http.StatusUnauthorized,
+			body:            "no api key",
+			wantErr:         true,
+			wantErrContains: "status=401 Unauthorized",
 		},
 		{
 			name:       "malformed body is an error",
@@ -80,6 +93,9 @@ func TestRuntimeStatus(t *testing.T) {
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected an error, got nil")
+				}
+				if tt.wantErrContains != "" && !strings.Contains(err.Error(), tt.wantErrContains) {
+					t.Errorf("error %q does not contain %q", err.Error(), tt.wantErrContains)
 				}
 				return
 			}

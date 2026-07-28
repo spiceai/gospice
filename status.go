@@ -63,7 +63,7 @@ func (c *SpiceClient) RuntimeStatus(ctx context.Context) ([]ConnectionDetails, e
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s failed with status=%d", url, resp.StatusCode)
+		return nil, fmt.Errorf("GET %s failed with status=%d %s", url, resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 
 	var details []ConnectionDetails
