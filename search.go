@@ -135,9 +135,14 @@ func (c *SpiceClient) Search(ctx context.Context, req *SearchRequest) (*SearchRe
 
 	httpReq = httpReq.WithContext(c.traceHttpRequest(ctx, "Search", httpReq))
 
-	httpReq.Header.Set("X-API-Key", c.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("user-agent", c.userAgent)
+	// Only send the key when there is one — an empty X-API-Key reads as a
+	// supplied-but-invalid credential to auth middleware, which is different
+	// from omitting the header. Matches IsSpiceReady in client.go.
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-API-Key", c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
