@@ -228,6 +228,41 @@ if !spice.IsSpiceReady(ctx) {
 - `IsSpiceHealthy(ctx)` - Calls `/health` endpoint (unauthenticated)
 - `IsSpiceReady(ctx)` - Calls `/v1/ready` endpoint (requires API key)
 
+## Search
+
+`Search` finds documents similar to a piece of text, using the runtime's `/v1/search` endpoint. It runs against datasets that have an embedding column and a loaded embedding model — see [Search & Retrieval](https://docs.spice.ai/features/search-and-retrieval) for how to configure them.
+
+```go
+ctx := context.Background()
+limit := 3
+
+resp, err := spice.Search(ctx, &gospice.SearchRequest{
+    Text:              "tokyo plane tickets",
+    Datasets:          []string{"app_messages"},
+    Limit:             &limit,
+    AdditionalColumns: []string{"timestamp"},
+})
+if err != nil {
+    log.Fatalf("search failed: %v", err)
+}
+
+fmt.Printf("%d matches in %dms\n", len(resp.Results), resp.DurationMs)
+for _, match := range resp.Results {
+    fmt.Println(match.Score, match.Dataset, match.Matches, match.Data)
+}
+```
+
+`SearchRequest` fields:
+
+- `Text` (required) - The text to find similar documents for.
+- `Datasets` - Datasets to search. Leave empty to search every searchable dataset.
+- `Limit` - Maximum matches to return per dataset.
+- `Where` - A SQL predicate filtering candidate rows, without the leading `WHERE` — for example `"user_id = 42"`.
+- `AdditionalColumns` - Extra columns to return with each match. Primary key columns are returned in `PrimaryKey`, the rest in `Data`.
+- `Keywords` - Keywords for the lexical pass of a hybrid search, which the runtime combines with the vector scores into a single ranking.
+
+Each `SearchMatch` carries `Dataset`, `Score` (higher is more similar), `Matches` (matched values keyed by source column — a slice per column, since one column can contribute several chunks to a match), `PrimaryKey`, `Data`, and `Metadata`.
+
 ## Example
 
 Run `go run .` to execute a sample query and print the results to the console.

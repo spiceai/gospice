@@ -41,7 +41,7 @@ jobs:
       # runtime install + integration tests to WSL (see the WSL steps below).
       - name: Unit tests (Windows native)
         if: matrix.os == 'windows-latest'
-        run: go test -v -run 'TestUserAgent|TestPrependedUserAgent|TestInferArrowType|TestAppendValueToBuilder|TestComprehensiveArrowTypes|TestParamType|TestTypedParamInference|TestExtendedArrowTypes' ./...
+        run: go test -v -run 'TestUserAgent|TestPrependedUserAgent|TestInferArrowType|TestAppendValueToBuilder|TestComprehensiveArrowTypes|TestParamType|TestTypedParamInference|TestExtendedArrowTypes|TestSearch' ./...
 
       - name: Install Spice (https://install.spiceai.org) (Linux)
         if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
