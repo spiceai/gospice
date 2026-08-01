@@ -39,6 +39,11 @@ type SearchRequest struct {
 }
 
 // SearchMatch is a single document matched by Search.
+//
+// The runtime omits primary_key, data and metadata from a match that has
+// none, so PrimaryKey, Data and Metadata are nil rather than empty in that
+// case. Reading from a nil map is safe and reports no entries; assigning into
+// one panics, so allocate before writing.
 type SearchMatch struct {
 	// Dataset is the dataset the match was found in.
 	Dataset string `json:"dataset"`
@@ -51,14 +56,16 @@ type SearchMatch struct {
 	// to a single match.
 	Matches map[string][]any `json:"matches"`
 
-	// PrimaryKey identifies the matched row. Empty when the dataset declares
-	// no primary key.
+	// PrimaryKey identifies the matched row. Nil when the dataset declares no
+	// primary key.
 	PrimaryKey map[string]any `json:"primary_key"`
 
-	// Data holds any AdditionalColumns that were requested.
+	// Data holds any AdditionalColumns that were requested. Nil when none were
+	// requested.
 	Data map[string]any `json:"data"`
 
-	// Metadata holds extra per-match metadata the runtime attached.
+	// Metadata holds extra per-match metadata the runtime attached. Nil when
+	// it attached none.
 	Metadata map[string]any `json:"metadata"`
 }
 

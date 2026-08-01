@@ -173,11 +173,23 @@ func TestSearchResponseDecoding(t *testing.T) {
 		t.Errorf("Metadata[chunk] = %v, want 2", first.Metadata["chunk"])
 	}
 
-	// The runtime omits data, primary_key, and metadata when they are empty.
+	// The runtime omits data, primary_key, and metadata from a match that has
+	// none, and an absent JSON key leaves the map nil. Assert nil rather than
+	// len == 0, which would also pass for an allocated empty map and so would
+	// not pin down what a caller actually receives.
 	second := resp.Results[1]
-	if len(second.PrimaryKey) != 0 || len(second.Data) != 0 || len(second.Metadata) != 0 {
-		t.Errorf("omitted fields should decode empty, got PrimaryKey=%v Data=%v Metadata=%v",
-			second.PrimaryKey, second.Data, second.Metadata)
+	if second.PrimaryKey != nil {
+		t.Errorf("omitted primary_key should decode nil, got %v", second.PrimaryKey)
+	}
+	if second.Data != nil {
+		t.Errorf("omitted data should decode nil, got %v", second.Data)
+	}
+	if second.Metadata != nil {
+		t.Errorf("omitted metadata should decode nil, got %v", second.Metadata)
+	}
+	// A nil map is still safe to read, which is what the doc comment promises.
+	if got := second.PrimaryKey["id"]; got != nil {
+		t.Errorf("reading a nil PrimaryKey should yield nil, got %v", got)
 	}
 }
 
