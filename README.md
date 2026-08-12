@@ -228,6 +228,30 @@ if !spice.IsSpiceReady(ctx) {
 - `IsSpiceHealthy(ctx)` - Calls `/health` endpoint (unauthenticated)
 - `IsSpiceReady(ctx)` - Calls `/v1/ready` endpoint (requires API key)
 
+### Runtime Status
+
+`IsSpiceReady` collapses the whole runtime into a single boolean. When you need to know
+*which* component is not ready, use `RuntimeStatus` to get per-connection detail:
+
+```go
+details, err := spice.RuntimeStatus(ctx)
+if err != nil {
+    log.Fatalf("error getting runtime status: %v", err)
+}
+
+for _, d := range details {
+    fmt.Printf("%s (%s): %s\n", d.Name, d.Endpoint, d.Status)
+}
+// http (127.0.0.1:8090): Ready
+// flight (127.0.0.1:50051): Ready
+// metrics (N/A): Disabled
+// opentelemetry (127.0.0.1:50051): Ready
+```
+
+Each `ConnectionDetails` carries the component `Name` (`http`, `flight`, `metrics` or
+`opentelemetry`), its `Endpoint`, and its `Status` — one of `Initializing`, `Ready`,
+`Disabled`, `Error`, `Refreshing`, `ShuttingDown` or `NotLoaded`. `d.IsReady()` is a
+shorthand for `d.Status == ComponentStatusReady`.
 ## Search
 
 `Search` finds documents similar to a piece of text, using the runtime's `/v1/search` endpoint. It runs against datasets that have an embedding column and a loaded embedding model — see [Search & Retrieval](https://docs.spice.ai/features/search-and-retrieval) for how to configure them.
