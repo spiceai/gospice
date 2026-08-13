@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	neturl "net/url"
 	"time"
 )
 
@@ -12,7 +13,7 @@ import (
 type ActiveQuery struct {
 	// QueryID is assigned by the runtime and is what CancelActiveQuery takes.
 	QueryID string `json:"query_id"`
-	// Protocol the query arrived on, such as "flight" or "http".
+	// Protocol the query arrived on: "http", "flight", "flightsql" or "internal".
 	Protocol string `json:"protocol"`
 	// SQLPreview is the query's SQL, truncated by the runtime for display.
 	SQLPreview string `json:"sql_preview"`
@@ -25,6 +26,30 @@ func (q ActiveQuery) StartedAt() time.Time {
 	return time.UnixMilli(q.StartedAtMs)
 }
 
+// isUUID reports whether queryID has the shape the runtime parses as a UUID.
+//
+// The IDs this SDK cancels always come from ListActiveQueries, so a value that
+// is not a UUID cannot name a running query.
+func isUUID(queryID string) bool {
+	if len(queryID) != 36 {
+		return false
+	}
+	for i := 0; i < len(queryID); i++ {
+		c := queryID[i]
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		isHex := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+		if !isHex {
+			return false
+		}
+	}
+	return true
+}
+
 type activeQueriesResponse struct {
 	Queries    []ActiveQuery `json:"queries"`
 	TotalCount int           `json:"total_count"`
@@ -35,15 +60,26 @@ type cancelActiveQueryResponse struct {
 	Status  string `json:"status"`
 }
 
-// ListActiveQueries returns the synchronous queries this client currently has running.
+// ListActiveQueries returns the synchronous queries running in the caller's scope.
 //
 // Synchronous queries are the ones started by Sql, SqlWithParams, FlightSQL, NSQL and
 // Search. Async query jobs are listed separately and are only available when the
 // runtime runs in cluster mode.
 //
 // The runtime does not return a query's ID to the client that submitted it, so this is
-// how to find the ID that CancelActiveQuery needs. Results are scoped to this client —
-// another caller's in-flight queries are never listed.
+// how to find the ID that CancelActiveQuery needs.
+//
+// Results are scoped to the authenticated principal — an API key or a client
+// certificate — not to this SpiceClient: every client presenting the same credential
+// lists the same queries, and requests for which the runtime establishes no principal
+// share its public scope. Runtime releases up to and including v2.1.5 do not scope
+// these two endpoints at all; see the package note on ListActiveQueries in README.md.
+//
+// Results also cover one runtime instance. The runtime holds active queries in memory
+// per process, and this call addresses the client's HTTP endpoint — which
+// WithHttpAddress sets, which defaults to Spice Cloud even when the Flight address is
+// local, and which behind a load balancer may resolve to an instance that never
+// received the query.
 func (c *SpiceClient) ListActiveQueries(ctx context.Context) ([]ActiveQuery, error) {
 	url := fmt.Sprintf("%s/v1/sql/active", c.baseHttpUrl)
 
@@ -83,8 +119,12 @@ func (c *SpiceClient) ListActiveQueries(ctx context.Context) ([]ActiveQuery, err
 
 // CancelActiveQuery cancels a running synchronous query by ID.
 //
-// queryID comes from ListActiveQueries. Cancellation is scoped to this client: an ID
-// belonging to another caller is reported as not found rather than cancelled.
+// queryID comes from ListActiveQueries. Cancellation is scoped to the authenticated
+// principal, not to this SpiceClient: any client presenting the same credential can
+// cancel the query, while an ID outside that scope is reported as not found.
+//
+// Like ListActiveQueries, this reaches one runtime instance — the client's HTTP
+// endpoint — and carries the same runtime-version caveat.
 //
 // To cancel an async query job instead, use AsyncQuery.Cancel.
 func (c *SpiceClient) CancelActiveQuery(ctx context.Context, queryID string) error {
@@ -92,7 +132,16 @@ func (c *SpiceClient) CancelActiveQuery(ctx context.Context, queryID string) err
 		return fmt.Errorf("queryID is required, use ListActiveQueries to find one")
 	}
 
-	url := fmt.Sprintf("%s/v1/sql/%s/cancel", c.baseHttpUrl, queryID)
+	// queryID is caller input and reaches the runtime as a path segment. Reject
+	// anything that is not a UUID here rather than building a path from it: "."
+	// and ".." are unreserved, so escaping leaves them intact, and a proxy or
+	// server that resolves dot segments would route this POST somewhere the
+	// caller never named.
+	if !isUUID(queryID) {
+		return fmt.Errorf("query ID %q is not a valid UUID, use the QueryID from ListActiveQueries", queryID)
+	}
+
+	url := fmt.Sprintf("%s/v1/sql/%s/cancel", c.baseHttpUrl, neturl.PathEscape(queryID))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
@@ -125,7 +174,7 @@ func (c *SpiceClient) CancelActiveQuery(ctx context.Context, queryID string) err
 	case http.StatusForbidden:
 		return fmt.Errorf("the configured API key does not allow cancelling queries, use a key with write access")
 	case http.StatusNotFound:
-		return fmt.Errorf("no active query %q found: it may have already finished, or it was submitted by a different client", queryID)
+		return fmt.Errorf("no active query %q found: it may have already finished, or it was submitted under a different API key", queryID)
 	default:
 		return fmt.Errorf("POST %s failed with status=%d %s", url, resp.StatusCode, http.StatusText(resp.StatusCode))
 	}

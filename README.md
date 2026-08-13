@@ -255,13 +255,42 @@ shorthand for `d.Status == ComponentStatusReady`.
 
 ## Listing and Cancelling Running Queries
 
-`ListActiveQueries` reports the synchronous queries this client currently has running —
+`ListActiveQueries` reports the synchronous queries running in the caller's scope —
 those started by `Sql`, `SqlWithParams`, FlightSQL, NSQL and `Search` — and
 `CancelActiveQuery` stops one by ID.
 
 The runtime does not hand a query's ID back to the client that submitted it, so the two
-are used together: list to find the query, then cancel it. Both are scoped to the caller,
-so a client only ever sees and cancels its own queries.
+are used together: list to find the query, then cancel it.
+
+Two boundaries apply, and a query is reachable only inside both.
+
+**One runtime instance.** The runtime holds active synchronous queries in memory, per
+process, and these endpoints report only what the instance answering them knows. A
+`SpiceClient` configures its Flight and HTTP endpoints independently, so behind a load
+balancer the query submitted over Flight may be running on a different instance than the
+one answering here — it will not be listed, and its ID reports as not found.
+
+**One authenticated principal**, not a `SpiceClient`. The principal is whatever
+credential the runtime authenticates — an API key or a client certificate — so every
+client presenting the same credential lists and cancels the same queries. Only requests
+for which the runtime establishes no principal at all share the `public` scope.
+
+> **Runtime version.** Principal scoping on these two endpoints landed in
+> [spiceai/spiceai#12841][active-query-scoping] and is in no runtime release up to and
+> including `v2.1.5`. Against an earlier runtime both calls operate on every active
+> query the instance holds, for any caller with write access. Check your runtime version
+> before relying on the scope described above.
+
+[active-query-scoping]: https://github.com/spiceai/spiceai/pull/12841
+
+Both calls address the client's HTTP endpoint, which defaults to Spice Cloud. Pass
+`WithHttpAddress` to point them at a local runtime:
+
+```go
+if err := spice.Init(spice.WithHttpAddress("http://127.0.0.1:8090")); err != nil {
+    panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+}
+```
 
 ```go
 ctx := context.Background()
