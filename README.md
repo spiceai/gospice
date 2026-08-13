@@ -252,6 +252,42 @@ Each `ConnectionDetails` carries the component `Name` (`http`, `flight`, `metric
 `opentelemetry`), its `Endpoint`, and its `Status` — one of `Initializing`, `Ready`,
 `Disabled`, `Error`, `Refreshing`, `ShuttingDown` or `NotLoaded`. `d.IsReady()` is a
 shorthand for `d.Status == ComponentStatusReady`.
+
+## Listing and Cancelling Running Queries
+
+`ListActiveQueries` reports the synchronous queries this client currently has running —
+those started by `Sql`, `SqlWithParams`, FlightSQL, NSQL and `Search` — and
+`CancelActiveQuery` stops one by ID.
+
+The runtime does not hand a query's ID back to the client that submitted it, so the two
+are used together: list to find the query, then cancel it. Both are scoped to the caller,
+so a client only ever sees and cancels its own queries.
+
+```go
+ctx := context.Background()
+
+queries, err := spice.ListActiveQueries(ctx)
+if err != nil {
+    log.Fatalf("error listing active queries: %v", err)
+}
+
+for _, q := range queries {
+    fmt.Printf("%s [%s] %s (started %s)\n",
+        q.QueryID, q.Protocol, q.SQLPreview, q.StartedAt().Format(time.RFC3339))
+}
+
+// Cancel a long-running query by ID.
+if len(queries) > 0 {
+    if err := spice.CancelActiveQuery(ctx, queries[0].QueryID); err != nil {
+        log.Fatalf("error cancelling query: %v", err)
+    }
+}
+```
+
+To cancel an *async query job* instead, use `AsyncQuery.Cancel` — see
+[Async Queries](#async-queries) above. Async jobs require the runtime to be running in
+cluster mode; the two calls here work on a default runtime.
+
 ## Search
 
 `Search` finds documents similar to a piece of text, using the runtime's `/v1/search` endpoint. It runs against datasets that have an embedding column and a loaded embedding model — see [Search & Retrieval](https://docs.spice.ai/features/search-and-retrieval) for how to configure them.
