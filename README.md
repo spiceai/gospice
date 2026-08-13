@@ -252,6 +252,71 @@ Each `ConnectionDetails` carries the component `Name` (`http`, `flight`, `metric
 `opentelemetry`), its `Endpoint`, and its `Status` — one of `Initializing`, `Ready`,
 `Disabled`, `Error`, `Refreshing`, `ShuttingDown` or `NotLoaded`. `d.IsReady()` is a
 shorthand for `d.Status == ComponentStatusReady`.
+
+## Listing and Cancelling Running Queries
+
+`ListActiveQueries` reports the synchronous queries running in the caller's scope —
+those started by `Sql`, `SqlWithParams`, FlightSQL, NSQL and `Search` — and
+`CancelActiveQuery` stops one by ID.
+
+The runtime does not hand a query's ID back to the client that submitted it, so the two
+are used together: list to find the query, then cancel it.
+
+Two boundaries apply, and a query is reachable only inside both.
+
+**One runtime instance.** The runtime holds active synchronous queries in memory, per
+process, and these endpoints report only what the instance answering them knows. A
+`SpiceClient` configures its Flight and HTTP endpoints independently, so behind a load
+balancer the query submitted over Flight may be running on a different instance than the
+one answering here — it will not be listed, and its ID reports as not found.
+
+**One authenticated principal**, not a `SpiceClient`. The principal is whatever
+credential the runtime authenticates — an API key or a client certificate — so every
+client presenting the same credential lists and cancels the same queries. Only requests
+for which the runtime establishes no principal at all share the `public` scope.
+
+> **Runtime version.** Principal scoping on these two endpoints landed in
+> [spiceai/spiceai#12841][active-query-scoping] and is in no runtime release up to and
+> including `v2.1.5`. Against an earlier runtime both calls operate on every active
+> query the instance holds, for any caller with write access. Check your runtime version
+> before relying on the scope described above.
+
+[active-query-scoping]: https://github.com/spiceai/spiceai/pull/12841
+
+Both calls address the client's HTTP endpoint, which defaults to Spice Cloud. Pass
+`WithHttpAddress` to point them at a local runtime:
+
+```go
+if err := spice.Init(spice.WithHttpAddress("http://127.0.0.1:8090")); err != nil {
+    panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+}
+```
+
+```go
+ctx := context.Background()
+
+queries, err := spice.ListActiveQueries(ctx)
+if err != nil {
+    log.Fatalf("error listing active queries: %v", err)
+}
+
+for _, q := range queries {
+    fmt.Printf("%s [%s] %s (started %s)\n",
+        q.QueryID, q.Protocol, q.SQLPreview, q.StartedAt().Format(time.RFC3339))
+}
+
+// Cancel a long-running query by ID.
+if len(queries) > 0 {
+    if err := spice.CancelActiveQuery(ctx, queries[0].QueryID); err != nil {
+        log.Fatalf("error cancelling query: %v", err)
+    }
+}
+```
+
+To cancel an *async query job* instead, use `AsyncQuery.Cancel` — see
+[Async Queries](#async-queries) above. Async jobs require the runtime to be running in
+cluster mode; the two calls here work on a default runtime.
+
 ## Search
 
 `Search` finds documents similar to a piece of text, using the runtime's `/v1/search` endpoint. It runs against datasets that have an embedding column and a loaded embedding model — see [Search & Retrieval](https://docs.spice.ai/features/search-and-retrieval) for how to configure them.
