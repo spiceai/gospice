@@ -71,7 +71,7 @@ func (s *asyncTestServer) DoAction(action *flight.Action, stream flight.FlightSe
 func startAsyncTestServer(t *testing.T, srv *asyncTestServer) string {
 	t.Helper()
 
-	fs := flight.NewFlightServer()
+	fs := flight.NewServerWithMiddleware(nil)
 	if err := fs.Init("127.0.0.1:0"); err != nil {
 		t.Fatalf("error starting test flight server: %v", err)
 	}
@@ -109,7 +109,7 @@ func buildIPCChunk(t *testing.T) []byte {
 	col := bldr.NewInt64Array()
 	defer col.Release()
 
-	rec := array.NewRecord(schema, []arrow.Array{col}, 3)
+	rec := array.NewRecordBatch(schema, []arrow.Array{col}, 3)
 	defer rec.Release()
 
 	var buf bytes.Buffer
