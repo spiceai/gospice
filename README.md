@@ -228,6 +228,130 @@ if !spice.IsSpiceReady(ctx) {
 - `IsSpiceHealthy(ctx)` - Calls `/health` endpoint (unauthenticated)
 - `IsSpiceReady(ctx)` - Calls `/v1/ready` endpoint (requires API key)
 
+### Runtime Status
+
+`IsSpiceReady` collapses the whole runtime into a single boolean. When you need to know
+*which* component is not ready, use `RuntimeStatus` to get per-connection detail:
+
+```go
+details, err := spice.RuntimeStatus(ctx)
+if err != nil {
+    log.Fatalf("error getting runtime status: %v", err)
+}
+
+for _, d := range details {
+    fmt.Printf("%s (%s): %s\n", d.Name, d.Endpoint, d.Status)
+}
+// http (127.0.0.1:8090): Ready
+// flight (127.0.0.1:50051): Ready
+// metrics (N/A): Disabled
+// opentelemetry (127.0.0.1:50051): Ready
+```
+
+Each `ConnectionDetails` carries the component `Name` (`http`, `flight`, `metrics` or
+`opentelemetry`), its `Endpoint`, and its `Status` — one of `Initializing`, `Ready`,
+`Disabled`, `Error`, `Refreshing`, `ShuttingDown` or `NotLoaded`. `d.IsReady()` is a
+shorthand for `d.Status == ComponentStatusReady`.
+
+## Listing and Cancelling Running Queries
+
+`ListActiveQueries` reports the synchronous queries running in the caller's scope —
+those started by `Sql`, `SqlWithParams`, FlightSQL, NSQL and `Search` — and
+`CancelActiveQuery` stops one by ID.
+
+The runtime does not hand a query's ID back to the client that submitted it, so the two
+are used together: list to find the query, then cancel it.
+
+Two boundaries apply, and a query is reachable only inside both.
+
+**One runtime instance.** The runtime holds active synchronous queries in memory, per
+process, and these endpoints report only what the instance answering them knows. A
+`SpiceClient` configures its Flight and HTTP endpoints independently, so behind a load
+balancer the query submitted over Flight may be running on a different instance than the
+one answering here — it will not be listed, and its ID reports as not found.
+
+**One authenticated principal**, not a `SpiceClient`. The principal is whatever
+credential the runtime authenticates — an API key or a client certificate — so every
+client presenting the same credential lists and cancels the same queries. Only requests
+for which the runtime establishes no principal at all share the `public` scope.
+
+> **Runtime version.** Principal scoping on these two endpoints landed in
+> [spiceai/spiceai#12841][active-query-scoping] and is in no runtime release up to and
+> including `v2.1.5`. Against an earlier runtime both calls operate on every active
+> query the instance holds, for any caller with write access. Check your runtime version
+> before relying on the scope described above.
+
+[active-query-scoping]: https://github.com/spiceai/spiceai/pull/12841
+
+Both calls address the client's HTTP endpoint, which defaults to Spice Cloud. Pass
+`WithHttpAddress` to point them at a local runtime:
+
+```go
+if err := spice.Init(spice.WithHttpAddress("http://127.0.0.1:8090")); err != nil {
+    panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+}
+```
+
+```go
+ctx := context.Background()
+
+queries, err := spice.ListActiveQueries(ctx)
+if err != nil {
+    log.Fatalf("error listing active queries: %v", err)
+}
+
+for _, q := range queries {
+    fmt.Printf("%s [%s] %s (started %s)\n",
+        q.QueryID, q.Protocol, q.SQLPreview, q.StartedAt().Format(time.RFC3339))
+}
+
+// Cancel a long-running query by ID.
+if len(queries) > 0 {
+    if err := spice.CancelActiveQuery(ctx, queries[0].QueryID); err != nil {
+        log.Fatalf("error cancelling query: %v", err)
+    }
+}
+```
+
+To cancel an *async query job* instead, use `AsyncQuery.Cancel` — see
+[Async Queries](#async-queries) above. Async jobs require the runtime to be running in
+cluster mode; the two calls here work on a default runtime.
+
+## Search
+
+`Search` finds documents similar to a piece of text, using the runtime's `/v1/search` endpoint. It runs against datasets that have an embedding column and a loaded embedding model — see [Search & Retrieval](https://docs.spice.ai/features/search-and-retrieval) for how to configure them.
+
+```go
+ctx := context.Background()
+limit := 3
+
+resp, err := spice.Search(ctx, &gospice.SearchRequest{
+    Text:              "tokyo plane tickets",
+    Datasets:          []string{"app_messages"},
+    Limit:             &limit,
+    AdditionalColumns: []string{"timestamp"},
+})
+if err != nil {
+    log.Fatalf("search failed: %v", err)
+}
+
+fmt.Printf("%d matches in %dms\n", len(resp.Results), resp.DurationMs)
+for _, match := range resp.Results {
+    fmt.Println(match.Score, match.Dataset, match.Matches, match.Data)
+}
+```
+
+`SearchRequest` fields:
+
+- `Text` (required) - The text to find similar documents for.
+- `Datasets` - Datasets to search. Leave empty to search every searchable dataset.
+- `Limit` - Maximum matches to return per dataset.
+- `Where` - A SQL predicate filtering candidate rows, without the leading `WHERE` — for example `"user_id = 42"`.
+- `AdditionalColumns` - Extra columns to return with each match. Primary key columns are returned in `PrimaryKey`, the rest in `Data`.
+- `Keywords` - Keywords for the lexical pass of a hybrid search, which the runtime combines with the vector scores into a single ranking.
+
+Each `SearchMatch` carries `Dataset`, `Score` (higher is more similar), `Matches` (matched values keyed by source column — a slice per column, since one column can contribute several chunks to a match), `PrimaryKey`, `Data`, and `Metadata`.
+
 ## Example
 
 Run `go run .` to execute a sample query and print the results to the console.
