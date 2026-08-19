@@ -77,7 +77,22 @@ jobs:
           }
           spice init spice_qs
           cd spice_qs
-          retry spice add spiceai/quickstart
+          # Define the dataset inline instead of `spice add spiceai/quickstart`.
+          # Fetching it from the Spicepod registry makes every PR depend on a
+          # remote service; when that service began returning a non-zip body,
+          # every run failed at "Failed to extract Spicepod archive: Could not
+          # find EOCD". This is the dataset spiceai/quickstart defines.
+          cat >> spicepod.yaml <<'YAML'
+
+          datasets:
+            - from: s3://spiceai-demo-datasets/taxi_trips/2024/
+              name: taxi_trips
+              description: taxi trips in s3
+              params:
+                file_format: parquet
+              acceleration:
+                enabled: true
+          YAML
           spice run &> spice.log &
           # Wait for Spice to be ready
           echo "Waiting for Spice to be ready..."
@@ -150,7 +165,22 @@ jobs:
           # Start a quickstart runtime.
           spice init spice_qs
           cd spice_qs
-          retry spice add spiceai/quickstart
+          # Define the dataset inline instead of `spice add spiceai/quickstart`.
+          # Fetching it from the Spicepod registry makes every PR depend on a
+          # remote service; when that service began returning a non-zip body,
+          # every run failed at "Failed to extract Spicepod archive: Could not
+          # find EOCD". This is the dataset spiceai/quickstart defines.
+          cat >> spicepod.yaml <<'YAML'
+
+          datasets:
+            - from: s3://spiceai-demo-datasets/taxi_trips/2024/
+              name: taxi_trips
+              description: taxi trips in s3
+              params:
+                file_format: parquet
+              acceleration:
+                enabled: true
+          YAML
           nohup spice run > spice.log 2>&1 &
           cd ..
 
