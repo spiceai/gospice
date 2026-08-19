@@ -118,6 +118,44 @@ func TestNsqlRequestHeaders(t *testing.T) {
 	}
 }
 
+func TestNsqlApiKeyHeader(t *testing.T) {
+	// An empty X-API-Key is not the same as no X-API-Key: auth middleware can
+	// read the former as a supplied-but-invalid credential.
+	tests := []struct {
+		name   string
+		apiKey string
+		want   string
+	}{
+		{name: "no key omits the header", apiKey: "", want: ""},
+		{name: "key is sent", apiKey: "test-key", want: "test-key"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got string
+			var present bool
+
+			spice := newNsqlTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				_, present = r.Header["X-Api-Key"]
+				got = r.Header.Get("X-API-Key")
+				_, _ = io.WriteString(w, `{"row_count":0,"schema":{},"data":[],"sql":"SELECT 1"}`)
+			})
+			spice.apiKey = tt.apiKey
+
+			if _, err := spice.Nsql(context.Background(), &NsqlRequest{Query: "how many orders"}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tt.want == "" && present {
+				t.Error("X-API-Key should be absent when no key is configured")
+			}
+			if got != tt.want {
+				t.Errorf("X-API-Key = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNsqlResponseDecoding(t *testing.T) {
 	body := `{
 		"row_count": 2,
