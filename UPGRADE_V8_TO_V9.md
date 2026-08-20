@@ -9,6 +9,8 @@ gospice v9 is a new major version. Unlike v8 (which was backward compatible with
 3. **Minimum Go version is now 1.25** (was 1.24).
 4. **Apache Arrow upgraded to v18.6.0** and **ADBC to v1.11.0**, matching the Spice.ai runtime's DataFusion 54.
 
+None of the other v9 additions below require code changes to adopt — they are new, opt-in APIs.
+
 ## 1. Update the import path
 
 ```bash
@@ -105,11 +107,23 @@ gospice v9 upgrades its Apache Arrow dependencies to match the Spice.ai runtime 
 
 Running `go mod tidy` after updating the import path will pull these in automatically.
 
+## 5. New in v9 (no migration required)
+
+These are new, additive APIs — nothing to change if you don't use them:
+
+- **Mutual TLS.** `WithTLSClientCertificate(certFile, keyFile)` and `WithTLSRootCertificate(caFile)` client options for presenting a client certificate and/or verifying the server against a custom CA.
+- **`Search`** against the runtime's `/v1/search` endpoint for embedding-based document search.
+- **`RuntimeStatus`** for per-component (`http`, `flight`, `metrics`, `opentelemetry`) status, complementing the existing `IsSpiceReady`.
+- **`ListActiveQueries` / `CancelActiveQuery`** for inspecting and cancelling synchronous queries running on the runtime. See the README for the scope and runtime-version caveats.
+- **`Nsql` / `NsqlGenerateSQL`** for natural-language querying against the runtime's `/v1/nsql` endpoint.
+
+Also, ADBC connections (`SqlWithParams`) now automatically re-authenticate and retry once when the server invalidates the session, instead of failing permanently — no code changes needed to benefit from this.
+
 ## Unchanged APIs
 
 Everything else is source-compatible with v8, including:
 
 - `Sql()` and `SqlWithParams()`
 - `IsSpiceHealthy()` and `IsSpiceReady()`
-- Client initialization (`NewSpiceClient`, `Init`, `WithApiKey`, `WithSpiceCloudAddress`, `WithFlightAddress`, `WithHttpAddress`, mTLS options)
+- Client initialization (`NewSpiceClient`, `Init`, `WithApiKey`, `WithSpiceCloudAddress`, `WithFlightAddress`, `WithHttpAddress`)
 - `RefreshDataset()` and the typed parameter constructors
