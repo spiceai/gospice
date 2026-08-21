@@ -352,6 +352,14 @@ for _, match := range resp.Results {
 
 Each `SearchMatch` carries `Dataset`, `Score` (higher is more similar), `Matches` (matched values keyed by source column — a slice per column, since one column can contribute several chunks to a match), `PrimaryKey`, `Data`, and `Metadata`.
 
+Numbers in `Matches`, `PrimaryKey`, `Data`, and `Metadata` are `json.Number`, not `float64`, so a 64-bit identifier is returned exactly rather than being rounded to `float64`'s 53 bits of integer precision. Convert with the precision the column actually has:
+
+```go
+id, err := match.PrimaryKey["id"].(json.Number).Int64()
+ratio, err := match.Data["ratio"].(json.Number).Float64()
+raw := match.Data["account_id"].(json.Number).String()
+```
+
 ## Text-to-SQL (NSQL)
 
 `Nsql` answers a question in natural language, using the runtime's `/v1/nsql` endpoint: the configured LLM generates SQL, the runtime runs it read-only, and both the rows and the generated query come back. It requires an LLM model in the Spicepod — see [Text to SQL](https://docs.spice.ai/features/text-to-sql) for how to configure one.
@@ -381,7 +389,7 @@ for _, row := range resp.Data {
 - `SampleDataEnabled` - Include sample rows in the model's context. Improves generation on ambiguous schemas, at the cost of sending data values to the model.
 - `PromptCacheKey` - A stable key forwarded to the model provider for prompt caching.
 
-Values in `Data` are decoded from JSON, so they carry JSON's types rather than the Arrow types named in `Schema` — numbers arrive as `float64`. When Arrow-typed results matter, generate the query and run it yourself:
+Values in `Data` are decoded from JSON, so they carry JSON's types rather than the Arrow types named in `Schema` — numbers arrive as `json.Number`, which keeps the value's original text so a 64-bit identifier is not rounded to `float64`'s 53 bits. Convert with `Int64`, `Float64`, or `String` as the column requires. When Arrow-typed results matter, generate the query and run it yourself:
 
 ```go
 sql, err := spice.NsqlGenerateSQL(ctx, &gospice.NsqlRequest{Query: "top 5 customers by revenue"})

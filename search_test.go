@@ -166,11 +166,13 @@ func TestSearchResponseDecoding(t *testing.T) {
 	if first.PrimaryKey["id"] != "6fd5a215" {
 		t.Errorf("PrimaryKey[id] = %v, want %q", first.PrimaryKey["id"], "6fd5a215")
 	}
-	if first.Data["timestamp"] != float64(1724716542) {
-		t.Errorf("Data[timestamp] = %v, want 1724716542", first.Data["timestamp"])
+	// Numbers decode as json.Number rather than float64 so that a 64-bit value
+	// is not rounded on the way in; see TestSearchPreservesLargeIntegers.
+	if got, ok := first.Data["timestamp"].(json.Number); !ok || got.String() != "1724716542" {
+		t.Errorf("Data[timestamp] = %#v, want json.Number(\"1724716542\")", first.Data["timestamp"])
 	}
-	if first.Metadata["chunk"] != float64(2) {
-		t.Errorf("Metadata[chunk] = %v, want 2", first.Metadata["chunk"])
+	if got, ok := first.Metadata["chunk"].(json.Number); !ok || got.String() != "2" {
+		t.Errorf("Metadata[chunk] = %#v, want json.Number(\"2\")", first.Metadata["chunk"])
 	}
 
 	// The runtime omits data, primary_key, and metadata from a match that has
@@ -259,5 +261,84 @@ func TestSearchMalformedResponse(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "error decoding response") {
 		t.Errorf("error = %q, want a decode error", err.Error())
+	}
+}
+
+func TestSearchApiKeyHeader(t *testing.T) {
+	// An empty X-API-Key is not the same as no X-API-Key: auth middleware can
+	// read the former as a supplied-but-invalid credential.
+	tests := []struct {
+		name   string
+		apiKey string
+		want   string
+	}{
+		{name: "no key omits the header", apiKey: "", want: ""},
+		{name: "key is sent", apiKey: "test-app|test-key", want: "test-app|test-key"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got string
+			var present bool
+
+			spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				_, present = r.Header["X-Api-Key"]
+				got = r.Header.Get("X-API-Key")
+				_, _ = io.WriteString(w, `{"results":[],"duration_ms":0}`)
+			})
+			spice.apiKey = tt.apiKey
+
+			if _, err := spice.Search(context.Background(), &SearchRequest{Text: "tokyo"}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tt.want == "" && present {
+				t.Error("X-API-Key should be absent when no key is configured")
+			}
+			if got != tt.want {
+				t.Errorf("X-API-Key = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSearchErrorSurfacesJSONMessage(t *testing.T) {
+	// The runtime reports some failures as JSON and others as plain text, so the
+	// JSON envelope has to be unwrapped rather than printed raw.
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "json error body is unwrapped",
+			body: `{"error":"dataset app_messages has no embeddings"}`,
+			want: "dataset app_messages has no embeddings",
+		},
+		{
+			name: "empty body is named",
+			body: "",
+			want: "(no response body)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = io.WriteString(w, tt.body)
+			})
+
+			_, err := spice.Search(context.Background(), &SearchRequest{Text: "tokyo"})
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.want)
+			}
+			if strings.Contains(err.Error(), `{"error"`) {
+				t.Errorf("error = %q, want the JSON envelope unwrapped", err.Error())
+			}
+		})
 	}
 }

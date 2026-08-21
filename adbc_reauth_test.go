@@ -25,9 +25,14 @@ func TestIsADBCAuthError(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "adbc unauthorized",
+			// Unauthorized means the credential is recognised but is not
+			// permitted to perform the operation. A fresh handshake with the
+			// same credential cannot fix that, so reconnecting would retire the
+			// connection out from under concurrent queries only to fail the
+			// retry with the same error.
+			name: "adbc unauthorized is not retried",
 			err:  adbc.Error{Code: adbc.StatusUnauthorized, Msg: "[FlightSQL] forbidden"},
-			want: true,
+			want: false,
 		},
 		{
 			name: "wrapped adbc unauthenticated (the prepared-statement failure shape)",
@@ -36,9 +41,9 @@ func TestIsADBCAuthError(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "pointer adbc unauthorized",
+			name: "pointer adbc unauthorized is not retried",
 			err:  &adbc.Error{Code: adbc.StatusUnauthorized, Msg: "[FlightSQL] forbidden"},
-			want: true,
+			want: false,
 		},
 		{
 			name: "wrapped pointer adbc unauthenticated",
@@ -59,6 +64,11 @@ func TestIsADBCAuthError(t *testing.T) {
 		{
 			name: "unrelated transient error",
 			err:  errors.New("connection refused"),
+			want: false,
+		},
+		{
+			name: "permission denied message does not reconnect",
+			err:  errors.New("rpc error: code = PermissionDenied desc = forbidden"),
 			want: false,
 		},
 	}

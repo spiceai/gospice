@@ -43,9 +43,14 @@ func (c *SpiceClient) RefreshDataset(ctx context.Context, dataset string, opts *
 
 	req = req.WithContext(c.traceHttpRequest(ctx, "RefreshDataset", req))
 
-	req.Header.Set("X-API-Key", c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("user-agent", c.userAgent)
+	// Only send the key when there is one — an empty X-API-Key reads as a
+	// supplied-but-invalid credential to auth middleware, which is different
+	// from omitting the header. Matches IsSpiceReady in client.go.
+	if c.apiKey != "" {
+		req.Header.Set("X-API-Key", c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

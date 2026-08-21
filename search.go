@@ -44,6 +44,13 @@ type SearchRequest struct {
 // none, so PrimaryKey, Data and Metadata are nil rather than empty in that
 // case. Reading from a nil map is safe and reports no entries; assigning into
 // one panics, so allocate before writing.
+//
+// Numbers in Matches, PrimaryKey, Data and Metadata are json.Number, not
+// float64, so a 64-bit identifier survives the round trip intact. Convert with
+// the precision the column has:
+//
+//	id, err := match.PrimaryKey["id"].(json.Number).Int64()
+//	f, err := match.Data["ratio"].(json.Number).Float64()
 type SearchMatch struct {
 	// Dataset is the dataset the match was found in.
 	Dataset string `json:"dataset"`
@@ -78,6 +85,30 @@ type SearchResponse struct {
 	DurationMs uint64 `json:"duration_ms"`
 }
 
+// searchErrorResponse is the runtime's JSON error body for a failed search.
+type searchErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// searchErrorMessage extracts the message to report from a failed search response.
+//
+// The runtime answers some failures with a JSON {"error": "..."} body and others —
+// "No data sources provided", for instance — with plain text, so both shapes have to
+// be handled or the part that tells the caller what to fix is lost.
+func searchErrorMessage(body []byte) string {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return "(no response body)"
+	}
+
+	var errResp searchErrorResponse
+	if json.Unmarshal(trimmed, &errResp) == nil && errResp.Error != "" {
+		return errResp.Error
+	}
+
+	return string(trimmed)
+}
+
 // Search finds documents similar to req.Text by calling the runtime's
 // /v1/search endpoint.
 //
@@ -109,9 +140,14 @@ func (c *SpiceClient) Search(ctx context.Context, req *SearchRequest) (*SearchRe
 
 	httpReq = httpReq.WithContext(c.traceHttpRequest(ctx, "Search", httpReq))
 
-	httpReq.Header.Set("X-API-Key", c.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("user-agent", c.userAgent)
+	// Only send the key when there is one — an empty X-API-Key reads as a
+	// supplied-but-invalid credential to auth middleware, which is different
+	// from omitting the header. Matches IsSpiceReady in client.go.
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-API-Key", c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -125,13 +161,11 @@ func (c *SpiceClient) Search(ctx context.Context, req *SearchRequest) (*SearchRe
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		// The runtime explains search failures in a plain-text body ("No data
-		// sources provided"). Surface it rather than only the status code.
-		return nil, fmt.Errorf("POST %s failed with status=%d: %s", url, resp.StatusCode, bytes.TrimSpace(respBody))
+		return nil, fmt.Errorf("POST %s failed with status=%d: %s", url, resp.StatusCode, searchErrorMessage(respBody))
 	}
 
 	var searchResp SearchResponse
-	if err := json.Unmarshal(respBody, &searchResp); err != nil {
+	if err := decodeJSONExact(respBody, &searchResp); err != nil {
 		return nil, fmt.Errorf("error decoding response from POST %s: %w", url, err)
 	}
 

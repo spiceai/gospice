@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-adbc/go/adbc/driver/flightsql"
@@ -25,20 +28,127 @@ type ADBCClient struct {
 	db   adbc.Database
 	conn adbc.Connection
 	mem  memory.Allocator // Reusable memory allocator for parameter binding
+
+	// mu guards the lease bookkeeping below.
+	//
+	// A connection cannot simply be closed when re-authentication replaces it:
+	// other goroutines may still be executing against it, and a RecordReader
+	// returned by SqlWithParams streams from it long after that call returned.
+	// Closing underneath either one turns another caller's in-flight query into
+	// a use-after-close. Instead a replaced connection is *retired* and closed
+	// only once the last lease on it is dropped.
+	mu      sync.Mutex
+	leases  int
+	retired bool
+	closed  bool
 }
 
-// initADBC initializes the ADBC connection
-func (c *SpiceClient) initADBC() error {
-	// Create reusable memory allocator
-	mem := memory.NewGoAllocator()
-	driver := flightsql.NewDriver(mem)
+// acquire records one user of the connection. Every acquire must be paired with
+// exactly one release, and the lease that travels with a returned RecordReader
+// is dropped when that reader is released.
+func (a *ADBCClient) acquire() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.leases++
+}
+
+// release drops one lease, closing the connection if it has been retired and
+// this was its last user.
+func (a *ADBCClient) release() {
+	a.mu.Lock()
+	a.leases--
+	shouldClose := a.retired && a.leases <= 0 && !a.closed
+	if shouldClose {
+		a.closed = true
+	}
+	a.mu.Unlock()
+
+	if shouldClose {
+		if err := a.closeNow(); err != nil {
+			log.Printf("warning: failed to close retired ADBC connection: %v", err)
+		}
+	}
+}
+
+// retire marks the connection as replaced. It closes immediately when nothing
+// holds a lease, and otherwise leaves the close to the last release.
+func (a *ADBCClient) retire() error {
+	a.mu.Lock()
+	a.retired = true
+	shouldClose := a.leases <= 0 && !a.closed
+	if shouldClose {
+		a.closed = true
+	}
+	a.mu.Unlock()
+
+	if shouldClose {
+		return a.closeNow()
+	}
+	return nil
+}
+
+// closeNow closes the connection and database. Callers must have claimed the
+// close by setting closed under mu, so this runs at most once.
+func (a *ADBCClient) closeNow() error {
+	var errs []error
+	if a.conn != nil {
+		if err := a.conn.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if a.db != nil {
+		if err := a.db.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("error closing ADBC client: %v", errs)
+	}
+	return nil
+}
+
+// leasedRecordReader keeps the ADBC connection a reader streams from alive for
+// as long as the reader is. It mirrors the wrapped reader's own retain/release
+// refcount and drops the connection lease when that count reaches zero.
+type leasedRecordReader struct {
+	array.RecordReader
+	client *ADBCClient
+	refs   atomic.Int64
+}
+
+func newLeasedRecordReader(rdr array.RecordReader, client *ADBCClient) *leasedRecordReader {
+	r := &leasedRecordReader{RecordReader: rdr, client: client}
+	r.refs.Store(1)
+	return r
+}
+
+func (r *leasedRecordReader) Retain() {
+	r.refs.Add(1)
+	r.RecordReader.Retain()
+}
+
+func (r *leasedRecordReader) Release() {
+	r.RecordReader.Release()
+	if r.refs.Add(-1) == 0 {
+		r.client.release()
+	}
+}
+
+// adbcOptions builds the FlightSQL driver options for the current client
+// configuration: endpoint URI, credentials, TLS material and user agent.
+func (c *SpiceClient) adbcOptions() (map[string]string, error) {
+	// A custom CA or a client certificate only means anything over TLS, so
+	// configuring either forces the TLS scheme rather than letting the
+	// :443/spiceai.io heuristic below decide.
+	tlsConfigured := c.tlsRootCertFile != "" || (c.tlsClientCertFile != "" && c.tlsClientKeyFile != "")
 
 	// Format the URI correctly for ADBC FlightSQL driver
 	uri := c.flightAddress
 	// If it doesn't start with grpc:// or grpc+tls://, add the appropriate scheme
 	if !strings.HasPrefix(uri, "grpc://") && !strings.HasPrefix(uri, "grpc+tls://") {
 		// For cloud addresses (with port 443 or containing spiceai.io), use grpc+tls
-		if strings.Contains(uri, ":443") || strings.Contains(uri, "spiceai.io") {
+		if tlsConfigured || strings.Contains(uri, ":443") || strings.Contains(uri, "spiceai.io") {
 			uri = "grpc+tls://" + uri
 		} else {
 			uri = "grpc://" + uri
@@ -56,9 +166,47 @@ func (c *SpiceClient) initADBC() error {
 		options[adbc.OptionKeyPassword] = c.apiKey
 	}
 
+	// Carry the same TLS material the Flight and HTTP clients use. Without it
+	// SqlWithParams is the odd one out: Init and every HTTP method succeed
+	// against a private-CA or mTLS runtime while this connection fails
+	// verification, or connects unauthenticated, depending on the server.
+	if c.tlsRootCertFile != "" {
+		caPem, err := os.ReadFile(c.tlsRootCertFile)
+		if err != nil {
+			return nil, fmt.Errorf("error reading TLS root certificate '%s': %w", c.tlsRootCertFile, err)
+		}
+		options[flightsql.OptionSSLRootCerts] = string(caPem)
+	}
+	if c.tlsClientCertFile != "" && c.tlsClientKeyFile != "" {
+		certPem, err := os.ReadFile(c.tlsClientCertFile)
+		if err != nil {
+			return nil, fmt.Errorf("error reading TLS client certificate '%s': %w", c.tlsClientCertFile, err)
+		}
+		keyPem, err := os.ReadFile(c.tlsClientKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("error reading TLS client key '%s': %w", c.tlsClientKeyFile, err)
+		}
+		options[flightsql.OptionMTLSCertChain] = string(certPem)
+		options[flightsql.OptionMTLSPrivateKey] = string(keyPem)
+	}
+
 	// Add user agent header
 	if c.userAgent != "" {
 		options["adbc.flight.sql.rpc.call_header.user-agent"] = c.userAgent
+	}
+
+	return options, nil
+}
+
+// initADBC initializes the ADBC connection
+func (c *SpiceClient) initADBC() error {
+	// Create reusable memory allocator
+	mem := memory.NewGoAllocator()
+	driver := flightsql.NewDriver(mem)
+
+	options, err := c.adbcOptions()
+	if err != nil {
+		return err
 	}
 
 	db, err := driver.NewDatabase(options)
@@ -84,29 +232,21 @@ func (c *SpiceClient) initADBC() error {
 	return nil
 }
 
-// closeADBC closes the ADBC connection and database
+// closeADBC retires the ADBC connection and database.
+//
+// The connection closes as soon as nothing is using it: immediately when no
+// query is in flight and no returned RecordReader is still streaming from it,
+// and otherwise when the last of those releases its lease.
 func (c *SpiceClient) closeADBC() error {
-	if c.adbcClient == nil {
+	c.adbcMu.Lock()
+	client := c.adbcClient
+	c.adbcClient = nil
+	c.adbcMu.Unlock()
+
+	if client == nil {
 		return nil
 	}
-
-	var errors []error
-	if c.adbcClient.conn != nil {
-		if err := c.adbcClient.conn.Close(); err != nil {
-			errors = append(errors, err)
-		}
-	}
-	if c.adbcClient.db != nil {
-		if err := c.adbcClient.db.Close(); err != nil {
-			errors = append(errors, err)
-		}
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("error closing ADBC client: %v", errors)
-	}
-
-	return nil
+	return client.retire()
 }
 
 // SqlWithParams executes a parameterized SQL query against Spice.ai and returns an Apache Arrow RecordReader
@@ -123,9 +263,9 @@ func (c *SpiceClient) closeADBC() error {
 //	reader, err := client.SqlWithParams(ctx, "SELECT * FROM table WHERE id = $1 AND name = $2", 123, "test")
 //	reader, err := client.SqlWithParams(ctx, "SELECT * FROM table WHERE ts = $1", TimestampParam(ts, arrow.Microsecond, "UTC"))
 func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...any) (array.RecordReader, error) {
-	// Capture the ADBC connection to use under the mutex so a concurrent
-	// re-authentication cannot swap it out from under this query.
-	used, err := c.ensureADBC()
+	// Take a lease on the ADBC connection so a concurrent re-authentication can
+	// replace it without closing it underneath this query.
+	used, err := c.acquireADBC()
 	if err != nil {
 		return nil, fmt.Errorf("ADBC client is not initialized and failed to initialize: %w", err)
 	}
@@ -140,23 +280,31 @@ func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...a
 		// subsequent request and the connection cannot recover on its own.
 		// Re-open the connection to perform a fresh handshake, then retry once.
 		fresh, reinitErr := c.reinitADBC(used)
+		// Done with the stale connection either way; it closes once every other
+		// user has also released it.
+		used.release()
 		if reinitErr != nil {
 			return nil, fmt.Errorf("ADBC re-authentication failed: %w (original error: %v)", reinitErr, err)
 		}
-		rdr, err = c.execADBCWithBackoff(ctx, fresh, sql, params...)
+		// reinitADBC hands back a connection with a lease already taken for us.
+		used = fresh
+		rdr, err = c.execADBCWithBackoff(ctx, used, sql, params...)
 	}
 	if err != nil {
+		used.release()
 		return nil, err
 	}
 
-	return rdr, nil
+	// The reader goes on streaming from the connection after this returns, so
+	// the lease travels with it and is dropped when it is released.
+	return newLeasedRecordReader(rdr, used), nil
 }
 
-// ensureADBC returns the current ADBC connection, lazily initializing it if
-// necessary. The read and initialization run under adbcMu so the returned
-// pointer is a consistent snapshot even while another goroutine may be
-// re-authenticating via reinitADBC.
-func (c *SpiceClient) ensureADBC() (*ADBCClient, error) {
+// acquireADBC returns the current ADBC connection with a lease taken on it,
+// lazily initializing it if necessary. The read, initialization and acquire run
+// under adbcMu, so the returned connection cannot be retired and closed between
+// being observed here and being used by the caller. The caller must release it.
+func (c *SpiceClient) acquireADBC() (*ADBCClient, error) {
 	c.adbcMu.Lock()
 	defer c.adbcMu.Unlock()
 
@@ -165,6 +313,7 @@ func (c *SpiceClient) ensureADBC() (*ADBCClient, error) {
 			return nil, err
 		}
 	}
+	c.adbcClient.acquire()
 	return c.adbcClient, nil
 }
 
@@ -228,15 +377,26 @@ func isADBCAuthError(err error) bool {
 
 // isADBCAuthStatus reports whether an ADBC status code indicates the server
 // rejected the connection's credentials or session.
+//
+// StatusUnauthorized is deliberately excluded: it means the credential is
+// recognised but is not permitted to perform the operation, which a fresh
+// handshake with the same credential cannot fix. Reconnecting on it would churn
+// the connection and retire it out from under concurrent queries, only to fail
+// the retry with the same error.
 func isADBCAuthStatus(code adbc.Status) bool {
-	return code == adbc.StatusUnauthenticated || code == adbc.StatusUnauthorized
+	return code == adbc.StatusUnauthenticated
 }
 
-// reinitADBC closes and re-opens the ADBC connection so that the next query
-// performs a fresh authentication handshake, returning the connection to use
-// for the retry. The stale argument is the connection the caller observed
-// failing; if another goroutine has already replaced it with a live one, that
-// connection is reused so the connection is only re-opened once.
+// reinitADBC re-opens the ADBC connection so that the next query performs a
+// fresh authentication handshake, returning the connection to use for the retry
+// with a lease already taken for the caller. The stale argument is the
+// connection the caller observed failing; if another goroutine has already
+// replaced it with a live one, that connection is reused so the connection is
+// only re-opened once.
+//
+// The stale connection is retired rather than closed: other goroutines may
+// still be executing against it, and readers already returned to callers go on
+// streaming from it. It closes once the last of them releases its lease.
 func (c *SpiceClient) reinitADBC(stale *ADBCClient) (*ADBCClient, error) {
 	c.adbcMu.Lock()
 	defer c.adbcMu.Unlock()
@@ -244,16 +404,20 @@ func (c *SpiceClient) reinitADBC(stale *ADBCClient) (*ADBCClient, error) {
 	// Another caller may have already re-opened the connection we observed as
 	// stale; if so, reuse theirs rather than churning the connection again.
 	if c.adbcClient != stale && c.adbcClient != nil {
+		c.adbcClient.acquire()
 		return c.adbcClient, nil
 	}
 
-	if closeErr := c.closeADBC(); closeErr != nil {
-		log.Printf("warning: failed to close stale ADBC connection during re-authentication: %v", closeErr)
+	if stale != nil {
+		if retireErr := stale.retire(); retireErr != nil {
+			log.Printf("warning: failed to close stale ADBC connection during re-authentication: %v", retireErr)
+		}
 	}
 	c.adbcClient = nil
 	if err := c.initADBC(); err != nil {
 		return nil, err
 	}
+	c.adbcClient.acquire()
 	return c.adbcClient, nil
 }
 
