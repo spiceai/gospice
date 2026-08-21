@@ -166,11 +166,13 @@ func TestSearchResponseDecoding(t *testing.T) {
 	if first.PrimaryKey["id"] != "6fd5a215" {
 		t.Errorf("PrimaryKey[id] = %v, want %q", first.PrimaryKey["id"], "6fd5a215")
 	}
-	if first.Data["timestamp"] != float64(1724716542) {
-		t.Errorf("Data[timestamp] = %v, want 1724716542", first.Data["timestamp"])
+	// Numbers decode as json.Number rather than float64 so that a 64-bit value
+	// is not rounded on the way in; see TestSearchPreservesLargeIntegers.
+	if got, ok := first.Data["timestamp"].(json.Number); !ok || got.String() != "1724716542" {
+		t.Errorf("Data[timestamp] = %#v, want json.Number(\"1724716542\")", first.Data["timestamp"])
 	}
-	if first.Metadata["chunk"] != float64(2) {
-		t.Errorf("Metadata[chunk] = %v, want 2", first.Metadata["chunk"])
+	if got, ok := first.Metadata["chunk"].(json.Number); !ok || got.String() != "2" {
+		t.Errorf("Metadata[chunk] = %#v, want json.Number(\"2\")", first.Metadata["chunk"])
 	}
 
 	// The runtime omits data, primary_key, and metadata from a match that has

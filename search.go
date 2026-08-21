@@ -44,6 +44,13 @@ type SearchRequest struct {
 // none, so PrimaryKey, Data and Metadata are nil rather than empty in that
 // case. Reading from a nil map is safe and reports no entries; assigning into
 // one panics, so allocate before writing.
+//
+// Numbers in Matches, PrimaryKey, Data and Metadata are json.Number, not
+// float64, so a 64-bit identifier survives the round trip intact. Convert with
+// the precision the column has:
+//
+//	id, err := match.PrimaryKey["id"].(json.Number).Int64()
+//	f, err := match.Data["ratio"].(json.Number).Float64()
 type SearchMatch struct {
 	// Dataset is the dataset the match was found in.
 	Dataset string `json:"dataset"`
@@ -158,7 +165,7 @@ func (c *SpiceClient) Search(ctx context.Context, req *SearchRequest) (*SearchRe
 	}
 
 	var searchResp SearchResponse
-	if err := json.Unmarshal(respBody, &searchResp); err != nil {
+	if err := decodeJSONExact(respBody, &searchResp); err != nil {
 		return nil, fmt.Errorf("error decoding response from POST %s: %w", url, err)
 	}
 

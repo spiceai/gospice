@@ -41,7 +41,15 @@ jobs:
       # runtime install + integration tests to WSL (see the WSL steps below).
       - name: Unit tests (Windows native)
         if: matrix.os == 'windows-latest'
-        run: go test -v -run 'TestUserAgent|TestPrependedUserAgent|TestInferArrowType|TestAppendValueToBuilder|TestComprehensiveArrowTypes|TestParamType|TestTypedParamInference|TestExtendedArrowTypes|TestSearch|TestNsql|TestListActiveQueries|TestCancelActiveQuery|TestActiveQueryStartedAt|TestRefreshDatasetApiKeyHeader' ./...
+        run: go test -v -run 'TestUserAgent|TestPrependedUserAgent|TestInferArrowType|TestAppendValueToBuilder|TestComprehensiveArrowTypes|TestParamType|TestTypedParamInference|TestExtendedArrowTypes|TestSearch|TestNsql|TestListActiveQueries|TestCancelActiveQuery|TestActiveQueryStartedAt|TestRefreshDatasetApiKeyHeader|TestADBCRetire|TestADBCLease|TestLeasedRecordReader|TestIsADBCAuthStatus|TestADBCOptions|TestDecodeJSONExact' ./...
+
+      # The ADBC connection lease bookkeeping decides when a replaced connection
+      # is closed, and closing one while another goroutine's query or an already
+      # returned RecordReader is still streaming from it is a use-after-close.
+      # That is only caught under the race detector, so run those tests with it.
+      - name: Race detector (runtime-free concurrency tests)
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -race -run 'TestADBCRetire|TestADBCLease|TestLeasedRecordReader' ./...
 
       - name: Install Spice (https://install.spiceai.org) (Linux)
         if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'

@@ -69,11 +69,17 @@ type cancelActiveQueryResponse struct {
 // The runtime does not return a query's ID to the client that submitted it, so this is
 // how to find the ID that CancelActiveQuery needs.
 //
-// Results are scoped to the authenticated principal — an API key or a client
-// certificate — not to this SpiceClient: every client presenting the same credential
-// lists the same queries, and requests for which the runtime establishes no principal
-// share its public scope. Runtime releases up to and including v2.1.5 do not scope
-// these two endpoints at all; see the package note on ListActiveQueries in README.md.
+// Check your runtime version before relying on any scoping here. No runtime release
+// up to and including v2.1.5 scopes these two endpoints at all: against one of those,
+// this returns every active query the instance holds — including other principals'
+// query IDs and SQL previews — to any caller with write access, and CancelActiveQuery
+// will cancel any of them. Scoping landed in spiceai/spiceai#12841; see the package
+// note on ListActiveQueries in README.md.
+//
+// On a runtime that does scope them, results are scoped to the authenticated
+// principal — an API key or a client certificate — not to this SpiceClient: every
+// client presenting the same credential lists the same queries, and requests for
+// which the runtime establishes no principal share its public scope.
 //
 // Results also cover one runtime instance. The runtime holds active queries in memory
 // per process, and this call addresses the client's HTTP endpoint — which
@@ -119,12 +125,14 @@ func (c *SpiceClient) ListActiveQueries(ctx context.Context) ([]ActiveQuery, err
 
 // CancelActiveQuery cancels a running synchronous query by ID.
 //
-// queryID comes from ListActiveQueries. Cancellation is scoped to the authenticated
-// principal, not to this SpiceClient: any client presenting the same credential can
-// cancel the query, while an ID outside that scope is reported as not found.
+// queryID comes from ListActiveQueries. On a runtime that scopes these endpoints,
+// cancellation is scoped to the authenticated principal, not to this SpiceClient: any
+// client presenting the same credential can cancel the query, while an ID outside that
+// scope is reported as not found. On a runtime that does not scope them — every release
+// up to and including v2.1.5 — this cancels any active query on the instance,
+// whichever principal submitted it. See ListActiveQueries.
 //
-// Like ListActiveQueries, this reaches one runtime instance — the client's HTTP
-// endpoint — and carries the same runtime-version caveat.
+// Like ListActiveQueries, this reaches one runtime instance: the client's HTTP endpoint.
 //
 // To cancel an async query job instead, use AsyncQuery.Cancel.
 func (c *SpiceClient) CancelActiveQuery(ctx context.Context, queryID string) error {

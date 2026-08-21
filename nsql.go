@@ -83,8 +83,10 @@ type NsqlResponse struct {
 
 	// Data holds the rows, each keyed by column name. Values are decoded from
 	// JSON, so they carry JSON's types rather than the Arrow types named in
-	// Schema - numbers arrive as float64. Use NsqlGenerateSQL with Query when
-	// Arrow-typed results matter.
+	// Schema - numbers arrive as json.Number, which keeps the value's original
+	// text so a 64-bit identifier is not rounded to float64's 53 bits. Convert
+	// with Int64, Float64, or String as the column requires. Use
+	// NsqlGenerateSQL with Query when Arrow-typed results matter.
 	Data []map[string]any `json:"data"`
 }
 
@@ -104,7 +106,7 @@ func (c *SpiceClient) Nsql(ctx context.Context, req *NsqlRequest) (*NsqlResponse
 	}
 
 	var nsqlResp NsqlResponse
-	if err := json.Unmarshal(respBody, &nsqlResp); err != nil {
+	if err := decodeJSONExact(respBody, &nsqlResp); err != nil {
 		return nil, fmt.Errorf("error decoding response from POST %s/v1/nsql: %w", c.baseHttpUrl, err)
 	}
 
