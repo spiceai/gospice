@@ -7,68 +7,75 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 )
 
-// SearchRequest describes a search against one or more datasets.
+// SearchRequest describes a search against the runtime's /v1/search endpoint.
 //
-// Text is required. Every other field is optional: when Datasets is empty the
-// runtime searches every dataset that has an embedding column, and when Limit
-// is zero the runtime applies its own default.
+// Only Text is required. Supplying Keywords adds a lexical pass, which the
+// runtime combines with the vector scores into a single hybrid ranking.
 type SearchRequest struct {
-	// Text is the query to find similar documents for.
+	// Text is the text to find similar documents for. Required.
 	Text string `json:"text"`
 
-	// Datasets restricts the search to the named datasets. Empty means every
-	// dataset with an embedding column and a loaded embedding model.
+	// Datasets restricts the search to the named datasets. When empty, the
+	// runtime searches every searchable dataset.
 	Datasets []string `json:"datasets,omitempty"`
 
-	// Limit caps the number of matches returned per dataset.
-	Limit int `json:"limit,omitempty"`
+	// Limit caps the number of matches returned per dataset. When nil, the
+	// runtime applies its own default.
+	Limit *int `json:"limit,omitempty"`
 
-	// Where is an SQL predicate applied before the search, without the WHERE
-	// keyword — for example `city = 'Tokyo'`.
-	Where string `json:"where,omitempty"`
+	// Where is a SQL predicate filtering candidate rows, without the leading
+	// WHERE - for example "user_id = 42".
+	Where *string `json:"where,omitempty"`
 
-	// AdditionalColumns names extra dataset columns to return. A column that is
-	// part of the dataset's primary key is returned in SearchMatch.PrimaryKey
-	// rather than SearchMatch.Data.
+	// AdditionalColumns names extra columns to return with each match. A
+	// primary key column is returned in SearchMatch.PrimaryKey, the rest in
+	// SearchMatch.Data.
 	AdditionalColumns []string `json:"additional_columns,omitempty"`
 
-	// Keywords pre-filters the embedding column with a lexical search before the
-	// vector search runs, producing a hybrid search.
+	// Keywords drives the lexical pass of a hybrid search.
 	Keywords []string `json:"keywords,omitempty"`
 }
 
-// SearchMatch is a single document matched by a search.
+// SearchMatch is a single document matched by Search.
+//
+// The runtime omits primary_key, data and metadata from a match that has
+// none, so PrimaryKey, Data and Metadata are nil rather than empty in that
+// case. Reading from a nil map is safe and reports no entries; assigning into
+// one panics, so allocate before writing.
 type SearchMatch struct {
 	// Dataset is the dataset the match was found in.
 	Dataset string `json:"dataset"`
 
-	// Score is the similarity of the match to the query text. Higher is closer.
+	// Score is the match's similarity to the query. Higher is more similar.
 	Score float64 `json:"_score"`
 
-	// Matches holds the matched values of each searched column.
-	Matches map[string][]any `json:"matches,omitempty"`
+	// Matches holds the matched values keyed by the column they came from.
+	// Each value is a slice because one column can contribute several chunks
+	// to a single match.
+	Matches map[string][]any `json:"matches"`
 
-	// PrimaryKey identifies the matched row. Empty unless the dataset declares a
+	// PrimaryKey identifies the matched row. Nil when the dataset declares no
 	// primary key.
-	PrimaryKey map[string]any `json:"primary_key,omitempty"`
+	PrimaryKey map[string]any `json:"primary_key"`
 
-	// Data holds the columns requested via SearchRequest.AdditionalColumns.
-	Data map[string]any `json:"data,omitempty"`
+	// Data holds any AdditionalColumns that were requested. Nil when none were
+	// requested.
+	Data map[string]any `json:"data"`
 
-	// Metadata holds any additional metadata the runtime attached to the match.
-	Metadata map[string]any `json:"metadata,omitempty"`
+	// Metadata holds extra per-match metadata the runtime attached. Nil when
+	// it attached none.
+	Metadata map[string]any `json:"metadata"`
 }
 
-// SearchResponse is the result of a search.
+// SearchResponse is the result of a single Search call.
 type SearchResponse struct {
 	// Results are the matches, ordered by descending score.
 	Results []SearchMatch `json:"results"`
 
-	// DurationMs is how long the runtime took to run the search.
-	DurationMs int64 `json:"duration_ms"`
+	// DurationMs is how long the runtime reported the search took.
+	DurationMs uint64 `json:"duration_ms"`
 }
 
 // searchErrorResponse is the runtime's JSON error body for a failed search.
@@ -79,46 +86,37 @@ type searchErrorResponse struct {
 // searchErrorMessage extracts the message to report from a failed search response.
 //
 // The runtime answers some failures with a JSON {"error": "..."} body and others —
-// "Search cannot be run on X because it has no embeddings or full text search
-// indexes", for instance — with plain text, so both shapes have to be handled or the
-// part that tells the caller what to fix is lost.
+// "No data sources provided", for instance — with plain text, so both shapes have to
+// be handled or the part that tells the caller what to fix is lost.
 func searchErrorMessage(body []byte) string {
-	trimmed := strings.TrimSpace(string(body))
-	if trimmed == "" {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
 		return "(no response body)"
 	}
 
 	var errResp searchErrorResponse
-	if json.Unmarshal(body, &errResp) == nil && errResp.Error != "" {
+	if json.Unmarshal(trimmed, &errResp) == nil && errResp.Error != "" {
 		return errResp.Error
 	}
 
-	return trimmed
+	return string(trimmed)
 }
 
-// Search runs a vector similarity, keyword, or hybrid search against datasets
-// that have an embedding column and a loaded embedding model.
+// Search finds documents similar to req.Text by calling the runtime's
+// /v1/search endpoint.
 //
-// Set SearchRequest.Keywords to pre-filter with a lexical search before the
-// vector search, which makes the search hybrid.
-//
-//	resp, err := spice.Search(ctx, &gospice.SearchRequest{
-//		Text:     "tickets to Tokyo",
-//		Datasets: []string{"app_messages"},
-//		Limit:    3,
-//	})
-//	if err != nil {
-//		return err
-//	}
-//	for _, match := range resp.Results {
-//		fmt.Println(match.Dataset, match.Score, match.Matches)
-//	}
+// It runs against datasets that have an embedding column and a loaded
+// embedding model. See https://docs.spice.ai/features/search-and-retrieval for
+// how to configure them.
 func (c *SpiceClient) Search(ctx context.Context, req *SearchRequest) (*SearchResponse, error) {
 	if req == nil {
-		return nil, fmt.Errorf("search request is required")
+		return nil, fmt.Errorf("req is required")
 	}
 	if req.Text == "" {
-		return nil, fmt.Errorf("search request Text is required")
+		return nil, fmt.Errorf("req.Text is required and must be a non-empty search string")
+	}
+	if req.Limit != nil && *req.Limit < 1 {
+		return nil, fmt.Errorf("req.Limit must be greater than 0, got %d", *req.Limit)
 	}
 
 	jsonData, err := json.Marshal(req)
@@ -152,16 +150,16 @@ func (c *SpiceClient) Search(ctx context.Context, req *SearchRequest) (*SearchRe
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading search response: %w", err)
+		return nil, fmt.Errorf("error reading response from POST %s: %w", url, err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("search failed with status=%d: %s", resp.StatusCode, searchErrorMessage(respBody))
+		return nil, fmt.Errorf("POST %s failed with status=%d: %s", url, resp.StatusCode, searchErrorMessage(respBody))
 	}
 
 	var searchResp SearchResponse
 	if err := json.Unmarshal(respBody, &searchResp); err != nil {
-		return nil, fmt.Errorf("error parsing search response: %w", err)
+		return nil, fmt.Errorf("error decoding response from POST %s: %w", url, err)
 	}
 
 	return &searchResp, nil

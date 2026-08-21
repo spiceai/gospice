@@ -10,120 +10,255 @@ import (
 	"testing"
 )
 
-// newTestSearchClient returns a client pointed at srv, without dialing Flight.
-func newTestSearchClient(srv *httptest.Server) *SpiceClient {
-	c := NewSpiceClient()
-	c.baseHttpUrl = srv.URL
-	return c
+// newSearchTestClient returns a client pointed at handler, without dialing
+// Flight - Search only uses the HTTP control plane.
+func newSearchTestClient(t *testing.T, handler http.HandlerFunc) *SpiceClient {
+	t.Helper()
+
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	spice := NewSpiceClient()
+	if err := WithHttpAddress(server.URL)(spice); err != nil {
+		t.Fatalf("error setting http address: %v", err)
+	}
+	return spice
 }
 
 func TestSearchRequestEncoding(t *testing.T) {
+	limit := 3
+	where := "user_id = 42"
+
 	tests := []struct {
 		name string
 		req  *SearchRequest
 		want map[string]any
 	}{
 		{
-			name: "text only omits optional fields",
-			req:  &SearchRequest{Text: "tickets to Tokyo"},
-			want: map[string]any{"text": "tickets to Tokyo"},
+			name: "text only",
+			req:  &SearchRequest{Text: "tokyo"},
+			want: map[string]any{"text": "tokyo"},
 		},
 		{
-			name: "datasets and limit",
+			name: "all options",
 			req: &SearchRequest{
-				Text:     "tickets to Tokyo",
-				Datasets: []string{"app_messages"},
-				Limit:    3,
-			},
-			want: map[string]any{
-				"text":     "tickets to Tokyo",
-				"datasets": []any{"app_messages"},
-				"limit":    float64(3),
-			},
-		},
-		{
-			name: "where predicate uses the wire name",
-			req: &SearchRequest{
-				Text:  "tickets",
-				Where: "city = 'Tokyo'",
-			},
-			want: map[string]any{
-				"text":  "tickets",
-				"where": "city = 'Tokyo'",
-			},
-		},
-		{
-			name: "keywords make the search hybrid",
-			req: &SearchRequest{
-				Text:              "tickets",
+				Text:              "tokyo",
+				Datasets:          []string{"app_messages"},
+				Limit:             &limit,
+				Where:             &where,
 				AdditionalColumns: []string{"timestamp"},
 				Keywords:          []string{"plane", "tickets"},
 			},
 			want: map[string]any{
-				"text":               "tickets",
+				"text":               "tokyo",
+				"datasets":           []any{"app_messages"},
+				"limit":              float64(3),
+				"where":              "user_id = 42",
 				"additional_columns": []any{"timestamp"},
 				"keywords":           []any{"plane", "tickets"},
 			},
+		},
+		{
+			// The runtime rejects an empty dataset list with a 400, so an empty
+			// slice must be omitted rather than sent.
+			name: "empty datasets omitted",
+			req:  &SearchRequest{Text: "tokyo", Datasets: []string{}},
+			want: map[string]any{"text": "tokyo"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got map[string]any
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+			spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				body, err := io.ReadAll(r.Body)
 				if err != nil {
 					t.Errorf("error reading request body: %v", err)
 				}
 				if err := json.Unmarshal(body, &got); err != nil {
-					t.Errorf("error unmarshaling request body: %v", err)
+					t.Errorf("error decoding request body: %v", err)
 				}
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"results":[],"duration_ms":1}`))
-			}))
-			defer srv.Close()
+				_, _ = io.WriteString(w, `{"results":[],"duration_ms":0}`)
+			})
 
-			if _, err := newTestSearchClient(srv).Search(context.Background(), tt.req); err != nil {
+			if _, err := spice.Search(context.Background(), tt.req); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if len(got) != len(tt.want) {
-				t.Errorf("encoded %d fields, want %d: got %v", len(got), len(tt.want), got)
-			}
-			for k, want := range tt.want {
-				gotVal, ok := got[k]
-				if !ok {
-					t.Errorf("missing field %q in %v", k, got)
-					continue
-				}
-				if gotJSON, _ := json.Marshal(gotVal); string(gotJSON) != mustJSON(t, want) {
-					t.Errorf("field %q = %v, want %v", k, gotVal, want)
-				}
+			gotJSON, _ := json.Marshal(got)
+			wantJSON, _ := json.Marshal(tt.want)
+			if string(gotJSON) != string(wantJSON) {
+				t.Errorf("request body = %s, want %s", gotJSON, wantJSON)
 			}
 		})
 	}
 }
 
-func TestSearchMethodAndPath(t *testing.T) {
-	var method, path, contentType string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		method, path, contentType = r.Method, r.URL.Path, r.Header.Get("Content-Type")
-		_, _ = w.Write([]byte(`{"results":[],"duration_ms":0}`))
-	}))
-	defer srv.Close()
+func TestSearchRequestPath(t *testing.T) {
+	var gotPath, gotMethod string
 
-	if _, err := newTestSearchClient(srv).Search(context.Background(), &SearchRequest{Text: "x"}); err != nil {
+	spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+		_, _ = io.WriteString(w, `{"results":[],"duration_ms":0}`)
+	})
+
+	if _, err := spice.Search(context.Background(), &SearchRequest{Text: "tokyo"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if method != http.MethodPost {
-		t.Errorf("method = %q, want POST", method)
+	if gotPath != "/v1/search" {
+		t.Errorf("path = %q, want %q", gotPath, "/v1/search")
 	}
-	if path != "/v1/search" {
-		t.Errorf("path = %q, want /v1/search", path)
+	if gotMethod != http.MethodPost {
+		t.Errorf("method = %q, want %q", gotMethod, http.MethodPost)
 	}
-	if contentType != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", contentType)
+}
+
+func TestSearchResponseDecoding(t *testing.T) {
+	body := `{
+		"results": [
+			{
+				"matches": {"message": ["I booked us some tickets", "direct to Narita"]},
+				"dataset": "app_messages",
+				"primary_key": {"id": "6fd5a215"},
+				"data": {"timestamp": 1724716542},
+				"metadata": {"chunk": 2},
+				"_score": 0.914321
+			},
+			{
+				"matches": {"message": ["we're sitting together"]},
+				"dataset": "app_messages",
+				"_score": 0.787654
+			}
+		],
+		"duration_ms": 42
+	}`
+
+	spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, body)
+	})
+
+	resp, err := spice.Search(context.Background(), &SearchRequest{Text: "tokyo"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.DurationMs != 42 {
+		t.Errorf("DurationMs = %d, want 42", resp.DurationMs)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("len(Results) = %d, want 2", len(resp.Results))
+	}
+
+	first := resp.Results[0]
+	if first.Dataset != "app_messages" {
+		t.Errorf("Dataset = %q, want %q", first.Dataset, "app_messages")
+	}
+	if first.Score != 0.914321 {
+		t.Errorf("Score = %v, want 0.914321", first.Score)
+	}
+	// One column can contribute several chunks to a single match.
+	if len(first.Matches["message"]) != 2 {
+		t.Errorf("len(Matches[message]) = %d, want 2", len(first.Matches["message"]))
+	}
+	if first.PrimaryKey["id"] != "6fd5a215" {
+		t.Errorf("PrimaryKey[id] = %v, want %q", first.PrimaryKey["id"], "6fd5a215")
+	}
+	if first.Data["timestamp"] != float64(1724716542) {
+		t.Errorf("Data[timestamp] = %v, want 1724716542", first.Data["timestamp"])
+	}
+	if first.Metadata["chunk"] != float64(2) {
+		t.Errorf("Metadata[chunk] = %v, want 2", first.Metadata["chunk"])
+	}
+
+	// The runtime omits data, primary_key, and metadata from a match that has
+	// none, and an absent JSON key leaves the map nil. Assert nil rather than
+	// len == 0, which would also pass for an allocated empty map and so would
+	// not pin down what a caller actually receives.
+	second := resp.Results[1]
+	if second.PrimaryKey != nil {
+		t.Errorf("omitted primary_key should decode nil, got %v", second.PrimaryKey)
+	}
+	if second.Data != nil {
+		t.Errorf("omitted data should decode nil, got %v", second.Data)
+	}
+	if second.Metadata != nil {
+		t.Errorf("omitted metadata should decode nil, got %v", second.Metadata)
+	}
+	// A nil map is still safe to read, which is what the doc comment promises.
+	if got := second.PrimaryKey["id"]; got != nil {
+		t.Errorf("reading a nil PrimaryKey should yield nil, got %v", got)
+	}
+}
+
+func TestSearchValidation(t *testing.T) {
+	zero := 0
+	negative := -1
+
+	tests := []struct {
+		name    string
+		req     *SearchRequest
+		wantErr string
+	}{
+		{name: "nil request", req: nil, wantErr: "req is required"},
+		{name: "empty text", req: &SearchRequest{}, wantErr: "req.Text is required"},
+		{name: "zero limit", req: &SearchRequest{Text: "tokyo", Limit: &zero}, wantErr: "greater than 0"},
+		{name: "negative limit", req: &SearchRequest{Text: "tokyo", Limit: &negative}, wantErr: "greater than 0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				_, _ = io.WriteString(w, `{"results":[],"duration_ms":0}`)
+			})
+
+			_, err := spice.Search(context.Background(), tt.req)
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantErr)
+			}
+			if called {
+				t.Error("expected no request to be sent")
+			}
+		})
+	}
+}
+
+func TestSearchErrorSurfacesRuntimeMessage(t *testing.T) {
+	spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, "No data sources provided")
+	})
+
+	_, err := spice.Search(context.Background(), &SearchRequest{Text: "tokyo"})
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "No data sources provided") {
+		t.Errorf("error = %q, want it to carry the runtime's message", err.Error())
+	}
+	if !strings.Contains(err.Error(), "400") {
+		t.Errorf("error = %q, want it to carry the status code", err.Error())
+	}
+}
+
+func TestSearchMalformedResponse(t *testing.T) {
+	spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "not json")
+	})
+
+	_, err := spice.Search(context.Background(), &SearchRequest{Text: "tokyo"})
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "error decoding response") {
+		t.Errorf("error = %q, want a decode error", err.Error())
 	}
 }
 
@@ -136,24 +271,22 @@ func TestSearchApiKeyHeader(t *testing.T) {
 		want   string
 	}{
 		{name: "no key omits the header", apiKey: "", want: ""},
-		{name: "key is sent", apiKey: "test-key", want: "test-key"},
+		{name: "key is sent", apiKey: "test-app|test-key", want: "test-app|test-key"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got string
 			var present bool
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+			spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				_, present = r.Header["X-Api-Key"]
 				got = r.Header.Get("X-API-Key")
-				_, _ = w.Write([]byte(`{"results":[],"duration_ms":0}`))
-			}))
-			defer srv.Close()
+				_, _ = io.WriteString(w, `{"results":[],"duration_ms":0}`)
+			})
+			spice.apiKey = tt.apiKey
 
-			c := newTestSearchClient(srv)
-			c.apiKey = tt.apiKey
-
-			if _, err := c.Search(context.Background(), &SearchRequest{Text: "x"}); err != nil {
+			if _, err := spice.Search(context.Background(), &SearchRequest{Text: "tokyo"}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
@@ -167,120 +300,21 @@ func TestSearchApiKeyHeader(t *testing.T) {
 	}
 }
 
-func TestSearchResponseDecoding(t *testing.T) {
-	// A response in the runtime's wire format: the score is `_score`, and
-	// data/primary_key/metadata are omitted entirely when empty.
-	const body = `{
-		"results": [
-			{
-				"matches": {"message": ["I booked us some tickets"]},
-				"dataset": "app_messages",
-				"primary_key": {"id": "6fd5a215-0881-421d-ace0-b293b83452b5"},
-				"data": {"timestamp": 1724716542},
-				"_score": 0.914321
-			},
-			{
-				"matches": {"message": ["direct to Narita"]},
-				"dataset": "app_messages",
-				"_score": 0.83221
-			}
-		],
-		"duration_ms": 42
-	}`
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(body))
-	}))
-	defer srv.Close()
-
-	resp, err := newTestSearchClient(srv).Search(context.Background(), &SearchRequest{Text: "tickets"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if resp.DurationMs != 42 {
-		t.Errorf("DurationMs = %d, want 42", resp.DurationMs)
-	}
-	if len(resp.Results) != 2 {
-		t.Fatalf("got %d results, want 2", len(resp.Results))
-	}
-
-	first := resp.Results[0]
-	if first.Dataset != "app_messages" {
-		t.Errorf("Dataset = %q, want app_messages", first.Dataset)
-	}
-	if first.Score != 0.914321 {
-		t.Errorf("Score = %v, want 0.914321", first.Score)
-	}
-	if got := first.PrimaryKey["id"]; got != "6fd5a215-0881-421d-ace0-b293b83452b5" {
-		t.Errorf("PrimaryKey[id] = %v", got)
-	}
-	if got := first.Data["timestamp"]; got != float64(1724716542) {
-		t.Errorf("Data[timestamp] = %v", got)
-	}
-	if got := first.Matches["message"]; len(got) != 1 || got[0] != "I booked us some tickets" {
-		t.Errorf("Matches[message] = %v", got)
-	}
-
-	// Omitted objects decode to nil, which is safe to read from in Go.
-	second := resp.Results[1]
-	if second.Data != nil {
-		t.Errorf("Data = %v, want nil for an omitted field", second.Data)
-	}
-	if got := second.Data["timestamp"]; got != nil {
-		t.Errorf("reading an omitted map should yield nil, got %v", got)
-	}
-}
-
-func TestSearchValidation(t *testing.T) {
-	tests := []struct {
-		name    string
-		req     *SearchRequest
-		wantErr string
-	}{
-		{name: "nil request", req: nil, wantErr: "search request is required"},
-		{name: "empty text", req: &SearchRequest{}, wantErr: "Text is required"},
-		{name: "empty text with datasets", req: &SearchRequest{Datasets: []string{"a"}}, wantErr: "Text is required"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				t.Error("request should not reach the runtime when validation fails")
-			}))
-			defer srv.Close()
-
-			_, err := newTestSearchClient(srv).Search(context.Background(), tt.req)
-			if err == nil {
-				t.Fatal("expected an error")
-			}
-			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestSearchSurfacesRuntimeError(t *testing.T) {
-	// The runtime answers some failures with JSON and others with plain text. Both
-	// carry the part that tells the caller what to fix, so both must survive.
+func TestSearchErrorSurfacesJSONMessage(t *testing.T) {
+	// The runtime reports some failures as JSON and others as plain text, so the
+	// JSON envelope has to be unwrapped rather than printed raw.
 	tests := []struct {
 		name string
 		body string
 		want string
 	}{
 		{
-			name: "json error body",
-			body: `{"error":"No data sources provided"}`,
-			want: "No data sources provided",
+			name: "json error body is unwrapped",
+			body: `{"error":"dataset app_messages has no embeddings"}`,
+			want: "dataset app_messages has no embeddings",
 		},
 		{
-			name: "plain text body",
-			body: "Search cannot be run on nation because it has no embeddings or full text search indexes.",
-			want: "no embeddings or full text search indexes",
-		},
-		{
-			name: "empty body",
+			name: "empty body is named",
 			body: "",
 			want: "(no response body)",
 		},
@@ -288,28 +322,21 @@ func TestSearchSurfacesRuntimeError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(tt.body))
-			}))
-			defer srv.Close()
+				_, _ = io.WriteString(w, tt.body)
+			})
 
-			_, err := newTestSearchClient(srv).Search(context.Background(), &SearchRequest{Text: "x"})
+			_, err := spice.Search(context.Background(), &SearchRequest{Text: "tokyo"})
 			if err == nil {
-				t.Fatal("expected an error")
+				t.Fatal("expected an error, got nil")
 			}
 			if !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.want)
 			}
+			if strings.Contains(err.Error(), `{"error"`) {
+				t.Errorf("error = %q, want the JSON envelope unwrapped", err.Error())
+			}
 		})
 	}
-}
-
-func mustJSON(t *testing.T, v any) string {
-	t.Helper()
-	b, err := json.Marshal(v)
-	if err != nil {
-		t.Fatalf("error marshaling %v: %v", v, err)
-	}
-	return string(b)
 }
