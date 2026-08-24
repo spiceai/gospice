@@ -69,6 +69,13 @@ func queryInternal(ctx context.Context, client flight.Client, appId string, apiK
 		return nil, err
 	}
 
+	// A well-behaved server always returns at least one endpoint to read results
+	// from. Check rather than index blindly, so a server that doesn't surfaces as
+	// an error instead of panicking in the caller's process.
+	if len(info.Endpoint) == 0 {
+		return nil, fmt.Errorf("query returned no Flight endpoint to read results from")
+	}
+
 	stream, err := client.DoGet(queryCtx, info.Endpoint[0].Ticket)
 	if err != nil {
 		return nil, err
