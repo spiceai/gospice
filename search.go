@@ -85,30 +85,6 @@ type SearchResponse struct {
 	DurationMs uint64 `json:"duration_ms"`
 }
 
-// searchErrorResponse is the runtime's JSON error body for a failed search.
-type searchErrorResponse struct {
-	Error string `json:"error"`
-}
-
-// searchErrorMessage extracts the message to report from a failed search response.
-//
-// The runtime answers some failures with a JSON {"error": "..."} body and others —
-// "No data sources provided", for instance — with plain text, so both shapes have to
-// be handled or the part that tells the caller what to fix is lost.
-func searchErrorMessage(body []byte) string {
-	trimmed := bytes.TrimSpace(body)
-	if len(trimmed) == 0 {
-		return "(no response body)"
-	}
-
-	var errResp searchErrorResponse
-	if json.Unmarshal(trimmed, &errResp) == nil && errResp.Error != "" {
-		return errResp.Error
-	}
-
-	return string(trimmed)
-}
-
 // Search finds documents similar to req.Text by calling the runtime's
 // /v1/search endpoint.
 //
@@ -161,7 +137,7 @@ func (c *SpiceClient) Search(ctx context.Context, req *SearchRequest) (*SearchRe
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("POST %s failed with status=%d: %s", url, resp.StatusCode, searchErrorMessage(respBody))
+		return nil, fmt.Errorf("POST %s failed with status=%d: %s", url, resp.StatusCode, errorMessageFromBody(respBody))
 	}
 
 	var searchResp SearchResponse

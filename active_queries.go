@@ -112,7 +112,7 @@ func (c *SpiceClient) ListActiveQueries(ctx context.Context) ([]ActiveQuery, err
 		return nil, fmt.Errorf("GET %s failed: the configured API key does not allow listing queries, use a key with write access", url)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s failed with status=%d %s", url, resp.StatusCode, http.StatusText(resp.StatusCode))
+		return nil, fmt.Errorf("GET %s failed with status=%d %s: %s", url, resp.StatusCode, http.StatusText(resp.StatusCode), runtimeErrorMessage(resp))
 	}
 
 	var decoded activeQueriesResponse
@@ -184,6 +184,6 @@ func (c *SpiceClient) CancelActiveQuery(ctx context.Context, queryID string) err
 	case http.StatusNotFound:
 		return fmt.Errorf("no active query %q found: it may have already finished, or it was submitted under a different API key", queryID)
 	default:
-		return fmt.Errorf("POST %s failed with status=%d %s", url, resp.StatusCode, http.StatusText(resp.StatusCode))
+		return fmt.Errorf("POST %s failed with status=%d %s: %s", url, resp.StatusCode, http.StatusText(resp.StatusCode), runtimeErrorMessage(resp))
 	}
 }

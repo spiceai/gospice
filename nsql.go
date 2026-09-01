@@ -172,10 +172,12 @@ func (c *SpiceClient) doNsqlRequest(ctx context.Context, req *NsqlRequest, opera
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		// The runtime explains NSQL failures in a plain-text body - a missing
-		// or ambiguous model, or SQL that would not run. Surface it rather
-		// than only the status code.
-		return nil, fmt.Errorf("POST %s failed with status=%d: %s", url, resp.StatusCode, bytes.TrimSpace(respBody))
+		// The runtime explains NSQL failures in the body - a missing or
+		// ambiguous model, or SQL that would not run - as plain text for some
+		// and as JSON for others. Interpret it the same way every other
+		// endpoint's failure is interpreted, rather than handing back whichever
+		// envelope this one happened to use.
+		return nil, fmt.Errorf("POST %s failed with status=%d: %s", url, resp.StatusCode, errorMessageFromBody(respBody))
 	}
 
 	return respBody, nil
