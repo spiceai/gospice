@@ -50,6 +50,10 @@ type SpiceClient struct {
 	tlsClientCertFile string
 	tlsClientKeyFile  string
 	tlsRootCertFile   string
+
+	// httpAddressSet records that WithHttpAddress named an endpoint, so Init
+	// leaves it alone instead of deriving one from the Flight address.
+	httpAddressSet bool
 }
 
 // NewSpiceClient creates a new SpiceClient
@@ -60,7 +64,7 @@ func NewSpiceClient() *SpiceClient {
 func NewSpiceClientWithAddress(flightAddress string) *SpiceClient {
 	spiceClient := &SpiceClient{
 		flightAddress: flightAddress,
-		baseHttpUrl:   defaultCloudConfig.HttpUrl,
+		baseHttpUrl:   defaultHttpUrlFor(flightAddress),
 		httpClient: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 10,
@@ -103,6 +107,7 @@ func WithFlightAddress(address string) SpiceClientModifier {
 func WithHttpAddress(address string) SpiceClientModifier {
 	return func(c *SpiceClient) error {
 		c.baseHttpUrl = address
+		c.httpAddressSet = true
 		return nil
 	}
 }
@@ -155,6 +160,13 @@ func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// Options may have moved the Flight endpoint (WithFlightAddress,
+	// WithSpiceCloudAddress). Unless the caller named an HTTP endpoint of their
+	// own, follow it, so both halves of the client address the same runtime.
+	if !c.httpAddressSet {
+		c.baseHttpUrl = defaultHttpUrlFor(c.flightAddress)
 	}
 
 	systemCertPool, err := x509.SystemCertPool()
@@ -258,6 +270,19 @@ func FlightHeadersInterceptor(headers map[string]string) grpc.UnaryClientInterce
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
+}
+
+// defaultHttpUrlFor returns the HTTP endpoint that belongs with a Flight
+// endpoint. The runtime serves Flight and HTTP as one deployment, so a client
+// querying a local runtime has to reach that runtime's HTTP API too — pairing
+// a local Flight address with the Cloud HTTP endpoint means health checks,
+// dataset refreshes, search and NSQL all report on a runtime the caller never
+// named.
+func defaultHttpUrlFor(flightAddress string) string {
+	if flightAddress == defaultCloudConfig.FlightUrl {
+		return defaultCloudConfig.HttpUrl
+	}
+	return defaultLocalConfig.HttpUrl
 }
 
 func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {

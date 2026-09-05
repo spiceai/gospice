@@ -226,7 +226,11 @@ if !spice.IsSpiceReady(ctx) {
 ```
 
 - `IsSpiceHealthy(ctx)` - Calls `/health` endpoint (unauthenticated)
-- `IsSpiceReady(ctx)` - Calls `/v1/ready` endpoint (requires API key)
+- `IsSpiceReady(ctx)` - Calls `/v1/ready` endpoint (requires an API key against Spice Cloud)
+
+Both report on the runtime behind the client's HTTP endpoint, which follows the Flight
+endpoint the client was initialized with — a client left on the local Flight default
+checks the local runtime, not Spice Cloud.
 
 ### Runtime Status
 
@@ -283,11 +287,13 @@ for which the runtime establishes no principal at all share the `public` scope.
 
 [active-query-scoping]: https://github.com/spiceai/spiceai/pull/12841
 
-Both calls address the client's HTTP endpoint, which defaults to Spice Cloud. Pass
-`WithHttpAddress` to point them at a local runtime:
+Both calls address the client's HTTP endpoint, which follows the Flight endpoint: a
+client on the local Flight address uses `http://127.0.0.1:8090`, and
+`WithSpiceCloudAddress` moves both to Spice Cloud. Pass `WithHttpAddress` when the
+runtime serves its HTTP API somewhere else:
 
 ```go
-if err := spice.Init(spice.WithHttpAddress("http://127.0.0.1:8090")); err != nil {
+if err := spice.Init(spice.WithHttpAddress("http://127.0.0.1:8091")); err != nil {
     panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 }
 ```
