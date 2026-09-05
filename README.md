@@ -228,9 +228,11 @@ if !spice.IsSpiceReady(ctx) {
 - `IsSpiceHealthy(ctx)` - Calls `/health` endpoint (unauthenticated)
 - `IsSpiceReady(ctx)` - Calls `/v1/ready` endpoint (requires an API key against Spice Cloud)
 
-Both report on the runtime behind the client's HTTP endpoint, which follows the Flight
-endpoint the client was initialized with — a client left on the local Flight default
-checks the local runtime, not Spice Cloud.
+Both report on the runtime behind the client's HTTP endpoint, which by default is paired
+with the Flight endpoint the client was initialized with — a client left on the local
+Flight default checks the local runtime, not Spice Cloud. Only the local and Spice Cloud
+Flight addresses have a paired HTTP endpoint; a client on any other Flight address keeps
+the Spice Cloud HTTP default until `WithHttpAddress` names its runtime's own.
 
 ### Runtime Status
 
@@ -270,7 +272,7 @@ Two boundaries apply, and a query is reachable only inside both.
 
 **One runtime instance.** The runtime holds active synchronous queries in memory, per
 process, and these endpoints report only what the instance answering them knows. A
-`SpiceClient` configures its Flight and HTTP endpoints independently, so behind a load
+`SpiceClient` resolves its Flight and HTTP endpoints separately, so behind a load
 balancer the query submitted over Flight may be running on a different instance than the
 one answering here — it will not be listed, and its ID reports as not found.
 
@@ -287,10 +289,11 @@ for which the runtime establishes no principal at all share the `public` scope.
 
 [active-query-scoping]: https://github.com/spiceai/spiceai/pull/12841
 
-Both calls address the client's HTTP endpoint, which follows the Flight endpoint: a
-client on the local Flight address uses `http://127.0.0.1:8090`, and
-`WithSpiceCloudAddress` moves both to Spice Cloud. Pass `WithHttpAddress` when the
-runtime serves its HTTP API somewhere else:
+Both calls address the client's HTTP endpoint, which is paired with the Flight endpoint
+for the two addresses that have a known pairing: a client on the local Flight address uses
+`http://127.0.0.1:8090`, and `WithSpiceCloudAddress` moves both to Spice Cloud. Any other
+Flight address has no paired HTTP endpoint, so pass `WithHttpAddress` — as you also would
+when the runtime serves its HTTP API somewhere else:
 
 ```go
 if err := spice.Init(spice.WithHttpAddress("http://127.0.0.1:8091")); err != nil {

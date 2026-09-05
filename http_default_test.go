@@ -93,3 +93,45 @@ func TestWithHttpAddressWinsOverTheDefault(t *testing.T) {
 		})
 	}
 }
+
+// A Flight endpoint that is neither of the two defaults says nothing about where
+// that runtime serves HTTP, so the pairing must not claim it does: deriving the
+// local HTTP URL for every unrecognised address would point a self-hosted client
+// — and the API key it was configured with — at whatever listens on this machine.
+// Such a client keeps the HTTP endpoint it already had.
+func TestCustomFlightAddressDoesNotDeriveTheLocalHttpUrl(t *testing.T) {
+	savedLocal, savedCloud := defaultLocalConfig, defaultCloudConfig
+	defer func() { defaultLocalConfig, defaultCloudConfig = savedLocal, savedCloud }()
+	defaultLocalConfig.HttpUrl = "http://localhost.invalid:8090"
+	defaultCloudConfig.HttpUrl = "https://data.example.invalid"
+
+	const customFlight = "grpc+tls://runtime.example.invalid:50051"
+
+	for _, tt := range []struct {
+		name  string
+		build func() *SpiceClient
+		opts  []SpiceClientModifier
+	}{
+		{
+			name:  "NewSpiceClientWithAddress",
+			build: func() *SpiceClient { return NewSpiceClientWithAddress(customFlight) },
+		},
+		{
+			name:  "WithFlightAddress",
+			build: NewSpiceClient,
+			opts:  []SpiceClientModifier{WithFlightAddress(customFlight)},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			spice := tt.build()
+			defer func() { _ = spice.Close() }()
+
+			if err := spice.Init(tt.opts...); err != nil {
+				t.Fatalf("error initializing SpiceClient: %v", err)
+			}
+			if spice.baseHttpUrl == defaultLocalConfig.HttpUrl {
+				t.Fatalf("a custom Flight address derived the local HTTP URL %q", spice.baseHttpUrl)
+			}
+		})
+	}
+}

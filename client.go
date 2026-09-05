@@ -62,9 +62,15 @@ func NewSpiceClient() *SpiceClient {
 }
 
 func NewSpiceClientWithAddress(flightAddress string) *SpiceClient {
+	// An address with no known HTTP counterpart keeps the Cloud endpoint this
+	// constructor has always defaulted to; WithHttpAddress names the runtime's own.
+	baseHttpUrl := defaultCloudConfig.HttpUrl
+	if paired, ok := defaultHttpUrlFor(flightAddress); ok {
+		baseHttpUrl = paired
+	}
 	spiceClient := &SpiceClient{
 		flightAddress: flightAddress,
-		baseHttpUrl:   defaultHttpUrlFor(flightAddress),
+		baseHttpUrl:   baseHttpUrl,
 		httpClient: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 10,
@@ -165,8 +171,15 @@ func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 	// Options may have moved the Flight endpoint (WithFlightAddress,
 	// WithSpiceCloudAddress). Unless the caller named an HTTP endpoint of their
 	// own, follow it, so both halves of the client address the same runtime.
+	// Resolved from the Flight address the options settled on, so an address
+	// with no known counterpart falls back to the Cloud endpoint this client has
+	// always defaulted to rather than keeping one derived for a different runtime.
 	if !c.httpAddressSet {
-		c.baseHttpUrl = defaultHttpUrlFor(c.flightAddress)
+		if paired, ok := defaultHttpUrlFor(c.flightAddress); ok {
+			c.baseHttpUrl = paired
+		} else {
+			c.baseHttpUrl = defaultCloudConfig.HttpUrl
+		}
 	}
 
 	systemCertPool, err := x509.SystemCertPool()
@@ -273,16 +286,25 @@ func FlightHeadersInterceptor(headers map[string]string) grpc.UnaryClientInterce
 }
 
 // defaultHttpUrlFor returns the HTTP endpoint that belongs with a Flight
-// endpoint. The runtime serves Flight and HTTP as one deployment, so a client
-// querying a local runtime has to reach that runtime's HTTP API too — pairing
-// a local Flight address with the Cloud HTTP endpoint means health checks,
-// dataset refreshes, search and NSQL all report on a runtime the caller never
-// named.
-func defaultHttpUrlFor(flightAddress string) string {
-	if flightAddress == defaultCloudConfig.FlightUrl {
-		return defaultCloudConfig.HttpUrl
+// endpoint, and whether that pairing is known at all. The runtime serves Flight
+// and HTTP as one deployment, so a client querying a local runtime has to reach
+// that runtime's HTTP API too — pairing a local Flight address with the Cloud
+// HTTP endpoint means health checks, dataset refreshes, search and NSQL all
+// report on a runtime the caller never named.
+//
+// Only the two default endpoints have a counterpart this client can name. Any
+// other Flight address — a self-hosted runtime, one behind a proxy — may serve
+// its HTTP API anywhere, so it reports false and the caller keeps the HTTP
+// endpoint it already had rather than being pointed at this machine.
+func defaultHttpUrlFor(flightAddress string) (string, bool) {
+	switch flightAddress {
+	case defaultCloudConfig.FlightUrl:
+		return defaultCloudConfig.HttpUrl, true
+	case defaultLocalConfig.FlightUrl:
+		return defaultLocalConfig.HttpUrl, true
+	default:
+		return "", false
 	}
-	return defaultLocalConfig.HttpUrl
 }
 
 func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
