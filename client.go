@@ -40,7 +40,10 @@ type SpiceClient struct {
 	baseHttpUrl   string
 
 	flightClient flight.Client
-	sessionMu    sync.Mutex // guards sessionToken
+	sessionMu    sync.Mutex // guards sessionToken and handshakeFlight
+	// handshakeFlight is the handshake in progress, if any. Callers that arrive
+	// while one is running wait for its outcome instead of starting their own.
+	handshakeFlight *handshakeFlight
 	// sessionToken is the bearer token the runtime issued for apiKey on the
 	// last handshake, reused by every authenticated Flight call until the
 	// runtime stops recognising it; empty when no session is established.

@@ -29,40 +29,104 @@ func (s flightSession) apply(ctx context.Context) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "Authorization", s.token)
 }
 
+// handshakeFlight is one handshake shared by every caller that wants a session
+// while it runs. Its outcome -- the token, or the error -- becomes theirs, so a
+// burst of callers costs one round trip whether the runtime accepts or refuses.
+type handshakeFlight struct {
+	// done is closed once token and err are set; they must not be read before.
+	done  chan struct{}
+	token string
+	err   error
+}
+
 // session returns the Flight session to send a call under, handshaking only when
 // no session is established yet.
 //
 // The runtime answers a handshake with a session it keeps for an hour of
 // inactivity, so one handshake serves every call a client makes rather than each
 // one paying a round trip of its own.
+//
+// Callers that arrive together share one handshake as well: an expiry under load
+// refuses every in-flight call at nearly the same instant, and a handshake each
+// would be a round trip each and a runtime session each left behind. The first
+// caller through performs it and the rest take its result -- including its
+// failure, so a runtime refusing the API key refuses it once rather than once
+// per waiting call.
+//
+// A waiter honours its own ctx while it waits: the handshake belongs to the
+// caller that started it, and one that hangs must not outlast the deadline of a
+// call that merely arrived behind it.
 func (c *SpiceClient) session(ctx context.Context) (flightSession, error) {
 	if c.appId == "" || c.apiKey == "" {
 		return flightSession{}, nil
 	}
 
 	c.sessionMu.Lock()
-	token := c.sessionToken
-	c.sessionMu.Unlock()
-	if token != "" {
+	if token := c.sessionToken; token != "" {
+		c.sessionMu.Unlock()
 		return flightSession{token: token, reused: true}, nil
 	}
-
-	if c.flightClient == nil {
-		return flightSession{}, fmt.Errorf("flight client is not initialized")
+	inflight := c.handshakeFlight
+	lead := inflight == nil
+	if lead {
+		inflight = &handshakeFlight{done: make(chan struct{})}
+		c.handshakeFlight = inflight
 	}
-	authCtx, err := c.flightClient.AuthenticateBasicToken(ctx, c.appId, c.apiKey)
+	c.sessionMu.Unlock()
+
+	if lead {
+		return c.leadHandshake(ctx, inflight)
+	}
+
+	select {
+	case <-ctx.Done():
+		return flightSession{}, ctx.Err()
+	case <-inflight.done:
+	}
+	if inflight.err != nil {
+		return flightSession{}, inflight.err
+	}
+	// Another caller's token. It is reported as reused because an arbitrary delay
+	// can separate that handshake from this call -- a scheduling pause here, a
+	// runtime restart there -- so it is exactly as renewable as a cached one.
+	return flightSession{token: inflight.token, reused: true}, nil
+}
+
+// leadHandshake performs the handshake for inflight and publishes its outcome to
+// every caller waiting on it.
+func (c *SpiceClient) leadHandshake(ctx context.Context, inflight *handshakeFlight) (flightSession, error) {
+	token, err := c.handshake(ctx)
+
+	c.sessionMu.Lock()
+	if err == nil {
+		c.sessionToken = token
+	}
+	c.handshakeFlight = nil
+	c.sessionMu.Unlock()
+
+	inflight.token, inflight.err = token, err
+	close(inflight.done)
+
 	if err != nil {
 		return flightSession{}, err
 	}
-	token = bearerToken(authCtx)
-	if token == "" {
-		return flightSession{}, fmt.Errorf("flight handshake returned no authorization token")
-	}
-
-	c.sessionMu.Lock()
-	c.sessionToken = token
-	c.sessionMu.Unlock()
 	return flightSession{token: token, reused: false}, nil
+}
+
+// handshake authenticates with the runtime and returns the bearer token it issued.
+func (c *SpiceClient) handshake(ctx context.Context) (string, error) {
+	if c.flightClient == nil {
+		return "", fmt.Errorf("flight client is not initialized")
+	}
+	authCtx, err := c.flightClient.AuthenticateBasicToken(ctx, c.appId, c.apiKey)
+	if err != nil {
+		return "", err
+	}
+	token := bearerToken(authCtx)
+	if token == "" {
+		return "", fmt.Errorf("flight handshake returned no authorization token")
+	}
+	return token, nil
 }
 
 // forgetSession drops the session holding stale, unless another call has already

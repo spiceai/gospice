@@ -3,10 +3,12 @@ package gospice
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -43,6 +45,15 @@ type sessionTestServer struct {
 	sessions          map[string]bool
 	refuseSessions    bool
 	requests          []seenRequest
+
+	// entered, when set, is signalled as each handshake begins, and gate, when
+	// set, holds it there until closed -- together they let a test park one
+	// handshake in flight and observe what callers arriving behind it do.
+	entered chan struct{}
+	gate    chan struct{}
+	// refuseHandshake makes the runtime reject the API key, as it does for a
+	// credential that has been revoked.
+	refuseHandshake bool
 }
 
 func newSessionTestServer() *sessionTestServer {
@@ -98,7 +109,26 @@ func (s *sessionTestServer) admit(ctx context.Context, rpc string) error {
 func (s *sessionTestServer) Handshake(stream flight.FlightService_HandshakeServer) error {
 	s.mu.Lock()
 	s.handshakeAttempts++
+	entered, gate, refuse := s.entered, s.gate, s.refuseHandshake
 	s.mu.Unlock()
+
+	if entered != nil {
+		select {
+		case entered <- struct{}{}:
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
+	if gate != nil {
+		select {
+		case <-gate:
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
+	if refuse {
+		return status.Error(codes.Unauthenticated, "Invalid credentials")
+	}
 
 	presented := header(stream.Context(), "authorization")
 	credential := base64.RawStdEncoding.EncodeToString([]byte(sessionTestAppID + ":" + sessionTestAPIKey))
@@ -414,5 +444,191 @@ func TestNoApiKeyMeansNoHandshake(t *testing.T) {
 	}
 	if attempts, _ := f.newHandshakes(); attempts != 0 {
 		t.Fatalf("no api key, no handshake; got %d attempts", attempts)
+	}
+}
+
+// Concurrent first use handshakes once. Callers that arrive together on a cold
+// client must not each pay a handshake: the runtime issues a session per
+// handshake, so N of them is N-1 round trips and N-1 sessions left behind.
+func TestConcurrentFirstUseHandshakesOnce(t *testing.T) {
+	f := newSessionFixture(t, newSessionTestServer(), WithApiKey(sessionTestAPIKey))
+	ctx := context.Background()
+
+	const callers = 8
+	var wg sync.WaitGroup
+	errs := make([]error, callers)
+	start := make(chan struct{})
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			rdr, err := f.spice.Sql(ctx, "SELECT 1")
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			defer rdr.Release()
+			for rdr.Next() {
+			}
+			errs[i] = rdr.Err()
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("caller %d: %v", i, err)
+		}
+	}
+	if _, handshakes := f.newHandshakes(); handshakes != 1 {
+		t.Fatalf("%d concurrent first calls must share one handshake, got %d", callers, handshakes)
+	}
+}
+
+// Concurrent renewal handshakes once. When a session expires under load every
+// in-flight call is refused at nearly the same instant; they must renew together
+// rather than one handshake per refused call.
+func TestConcurrentRenewalHandshakesOnce(t *testing.T) {
+	f := newSessionFixture(t, newSessionTestServer(), WithApiKey(sessionTestAPIKey))
+	ctx := context.Background()
+
+	rdr, err := f.spice.Sql(ctx, "SELECT 1")
+	if err != nil {
+		t.Fatalf("priming query: %v", err)
+	}
+	countRows(t, rdr)
+	if _, handshakes := f.newHandshakes(); handshakes != 1 {
+		t.Fatalf("priming query must handshake once, got %d", handshakes)
+	}
+
+	f.srv.expireSessions()
+
+	const callers = 8
+	var wg sync.WaitGroup
+	errs := make([]error, callers)
+	start := make(chan struct{})
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			r, err := f.spice.Sql(ctx, "SELECT 1")
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			defer r.Release()
+			for r.Next() {
+			}
+			errs[i] = r.Err()
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("caller %d: %v", i, err)
+		}
+	}
+	// One handshake for the priming query, one for the shared renewal.
+	if _, handshakes := f.newHandshakes(); handshakes != 2 {
+		t.Fatalf("%d concurrent renewals must share one handshake, got %d total", callers, handshakes)
+	}
+}
+
+// parkOneHandshake starts a call that reaches the runtime's handshake and stops
+// there, and returns a release func plus the parked call's own result channel.
+// Because the client publishes the in-flight handshake before making the network
+// call, every caller that starts after this returns is one that joins it.
+func parkOneHandshake(t *testing.T, f *sessionFixture) (release func(), parked <-chan error) {
+	t.Helper()
+	f.srv.mu.Lock()
+	f.srv.entered = make(chan struct{}, 1)
+	f.srv.gate = make(chan struct{})
+	entered, gate := f.srv.entered, f.srv.gate
+	f.srv.mu.Unlock()
+
+	done := make(chan error, 1)
+	go func() {
+		rdr, err := f.spice.Sql(context.Background(), "SELECT 1")
+		if err == nil {
+			rdr.Release()
+		}
+		done <- err
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the leading call never reached the runtime handshake")
+	}
+	var once sync.Once
+	return func() { once.Do(func() { close(gate) }) }, done
+}
+
+// A caller waiting on somebody else's handshake still honours its own deadline.
+// The handshake belongs to the call that started it, and one that hangs must not
+// outlast the deadline of a call that merely arrived behind it.
+func TestAWaiterOnAStalledHandshakeHonoursItsDeadline(t *testing.T) {
+	f := newSessionFixture(t, newSessionTestServer(), WithApiKey(sessionTestAPIKey))
+	release, parked := parkOneHandshake(t, f)
+	defer func() { release(); <-parked }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	returned := make(chan error, 1)
+	go func() {
+		_, err := f.spice.Sql(ctx, "SELECT 1")
+		returned <- err
+	}()
+
+	select {
+	case err := <-returned:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected the waiter to fail with its own deadline, got %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the waiter blocked past its deadline on another call's handshake")
+	}
+}
+
+// A runtime that refuses the API key refuses it once, not once per waiting call.
+// The callers behind an in-flight handshake take its failure as their own rather
+// than queueing to be rejected in turn.
+func TestConcurrentCallersShareARefusedHandshake(t *testing.T) {
+	srv := newSessionTestServer()
+	srv.refuseHandshake = true
+	f := newSessionFixture(t, srv, WithApiKey(sessionTestAPIKey))
+
+	release, parked := parkOneHandshake(t, f)
+
+	const waiters = 7
+	var wg sync.WaitGroup
+	errs := make([]error, waiters)
+	for i := 0; i < waiters; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = f.spice.Sql(context.Background(), "SELECT 1")
+		}(i)
+	}
+
+	release()
+	wg.Wait()
+	if err := <-parked; err == nil {
+		t.Fatal("the leading call must fail against a runtime that refuses the key")
+	}
+	for i, err := range errs {
+		if err == nil {
+			t.Fatalf("waiter %d must inherit the refusal, got success", i)
+		}
+	}
+
+	if attempts, handshakes := f.newHandshakes(); attempts != 1 || handshakes != 0 {
+		t.Fatalf("%d callers must share one refused handshake, got %d attempts and %d accepted", waiters+1, attempts, handshakes)
 	}
 }
