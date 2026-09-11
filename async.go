@@ -123,11 +123,7 @@ func (q *AsyncQuery) ID() string { return q.queryID }
 
 // Status performs a single poll and returns the current status of the query.
 func (q *AsyncQuery) Status(ctx context.Context) (QueryStatus, error) {
-	authCtx, err := q.client.authContext(ctx)
-	if err != nil {
-		return "", err
-	}
-	resp, err := q.client.getAsyncStatus(authCtx, q.queryID)
+	resp, err := q.client.getAsyncStatus(ctx, q.queryID)
 	if err != nil {
 		return "", err
 	}
@@ -138,16 +134,11 @@ func (q *AsyncQuery) Status(ctx context.Context) (QueryStatus, error) {
 // Wait polls the runtime until the query reaches a terminal status
 // (SUCCEEDED, FAILED, CANCELLED, or CLOSED) or ctx is cancelled.
 func (q *AsyncQuery) Wait(ctx context.Context) (QueryStatus, error) {
-	authCtx, err := q.client.authContext(ctx)
-	if err != nil {
-		return "", err
-	}
-
 	ticker := time.NewTicker(asyncPollInterval)
 	defer ticker.Stop()
 
 	for {
-		resp, err := q.client.getAsyncStatus(authCtx, q.queryID)
+		resp, err := q.client.getAsyncStatus(ctx, q.queryID)
 		if err != nil {
 			return "", err
 		}
@@ -175,12 +166,7 @@ func (q *AsyncQuery) Results(ctx context.Context) (array.RecordReader, error) {
 		return nil, err
 	}
 
-	authCtx, err := q.client.authContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	statusResp, err := q.client.getAsyncStatus(authCtx, q.queryID)
+	statusResp, err := q.client.getAsyncStatus(ctx, q.queryID)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +193,7 @@ func (q *AsyncQuery) Results(ctx context.Context) (array.RecordReader, error) {
 		schema  *arrow.Schema
 	)
 	for i := 0; i < fetchCount; i++ {
-		body, err := q.client.doAction(authCtx, actionGetAsyncQueryResult,
+		body, err := q.client.doAction(ctx, actionGetAsyncQueryResult,
 			getAsyncQueryResultRequest{QueryID: q.queryID, ChunkIndex: i})
 		if err != nil {
 			// A missing chunk 0 on a genuinely empty result is not an error.
@@ -256,11 +242,7 @@ func (q *AsyncQuery) Results(ctx context.Context) (array.RecordReader, error) {
 // has already reached a terminal status will not be cancelled, which is not
 // reported as an error. Inspect Status to observe the outcome.
 func (q *AsyncQuery) Cancel(ctx context.Context) error {
-	authCtx, err := q.client.authContext(ctx)
-	if err != nil {
-		return err
-	}
-	body, err := q.client.doAction(authCtx, actionCancelAsyncQuery,
+	body, err := q.client.doAction(ctx, actionCancelAsyncQuery,
 		cancelAsyncQueryRequest{QueryID: q.queryID})
 	if err != nil {
 		return err
@@ -299,11 +281,7 @@ func (c *SpiceClient) QueryWithParams(ctx context.Context, sql string, params ..
 }
 
 func (c *SpiceClient) submitAsync(ctx context.Context, sql string, parameters any) (*AsyncQuery, error) {
-	authCtx, err := c.authContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	body, err := c.doAction(authCtx, actionSubmitAsyncQuery,
+	body, err := c.doAction(ctx, actionSubmitAsyncQuery,
 		submitAsyncQueryRequest{Sql: sql, Parameters: parameters})
 	if err != nil {
 		return nil, fmt.Errorf("failed to submit async query: %w", err)
@@ -315,18 +293,8 @@ func (c *SpiceClient) submitAsync(ctx context.Context, sql string, parameters an
 	return &AsyncQuery{client: c, queryID: resp.QueryID, status: resp.Status}, nil
 }
 
-// authContext returns a context carrying the Flight bearer token when an API key
-// is configured, or ctx unchanged for unauthenticated (local) runtimes.
-func (c *SpiceClient) authContext(ctx context.Context) (context.Context, error) {
-	if c.appId == "" || c.apiKey == "" {
-		return ctx, nil
-	}
-	return c.flightClient.AuthenticateBasicToken(ctx, c.appId, c.apiKey)
-}
-
-// doAction performs a Flight DoAction with a JSON-encoded request body and
-// returns the concatenated Result bodies. ctx should already be authenticated
-// via authContext.
+// doAction performs a Flight DoAction with a JSON-encoded request body under the
+// client's Flight session and returns the concatenated Result bodies.
 func (c *SpiceClient) doAction(ctx context.Context, actionType string, request any) ([]byte, error) {
 	if c.flightClient == nil {
 		return nil, fmt.Errorf("flight client is not initialized")
@@ -336,21 +304,27 @@ func (c *SpiceClient) doAction(ctx context.Context, actionType string, request a
 		return nil, fmt.Errorf("failed to marshal %s request: %w", actionType, err)
 	}
 
-	stream, err := c.flightClient.DoAction(ctx, &flight.Action{Type: actionType, Body: reqBody})
+	var out []byte
+	err = c.withSession(ctx, func(ctx context.Context) error {
+		stream, err := c.flightClient.DoAction(ctx, &flight.Action{Type: actionType, Body: reqBody})
+		if err != nil {
+			return err
+		}
+
+		out = out[:0]
+		for {
+			res, err := stream.Recv()
+			if err == io.EOF {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			out = append(out, res.Body...)
+		}
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	var out []byte
-	for {
-		res, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, res.Body...)
 	}
 	return out, nil
 }

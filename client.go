@@ -39,7 +39,15 @@ type SpiceClient struct {
 	flightAddress string
 	baseHttpUrl   string
 
-	flightClient  flight.Client
+	flightClient flight.Client
+	sessionMu    sync.Mutex // guards sessionToken and handshakeFlight
+	// handshakeFlight is the handshake in progress, if any. Callers that arrive
+	// while one is running wait for its outcome instead of starting their own.
+	handshakeFlight *handshakeFlight
+	// sessionToken is the bearer token the runtime issued for apiKey on the
+	// last handshake, reused by every authenticated Flight call until the
+	// runtime stops recognising it; empty when no session is established.
+	sessionToken  string
 	adbcClient    *ADBCClient
 	adbcMu        sync.Mutex // guards re-initialization of adbcClient
 	httpClient    http.Client
@@ -178,6 +186,8 @@ func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 	}
 
 	c.flightClient = flightClient
+	// A session belongs to the connection that performed its handshake.
+	c.forgetSession("")
 
 	// Update the HTTP client transport with the same TLS configuration
 	// (custom CA and/or client certificate) used by the Flight client.
@@ -221,6 +231,7 @@ func (c *SpiceClient) Close() error {
 			errors = append(errors, err)
 		}
 	}
+	c.forgetSession("")
 
 	if err := c.closeADBC(); err != nil {
 		errors = append(errors, err)
