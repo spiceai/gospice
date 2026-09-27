@@ -50,6 +50,10 @@ type SpiceClient struct {
 	tlsClientCertFile string
 	tlsClientKeyFile  string
 	tlsRootCertFile   string
+
+	// httpAddressSet records that WithHttpAddress named an endpoint, so Init
+	// leaves it alone instead of deriving one from the Flight address.
+	httpAddressSet bool
 }
 
 // NewSpiceClient creates a new SpiceClient
@@ -58,9 +62,15 @@ func NewSpiceClient() *SpiceClient {
 }
 
 func NewSpiceClientWithAddress(flightAddress string) *SpiceClient {
+	// An address with no known HTTP counterpart keeps the Cloud endpoint this
+	// constructor has always defaulted to; WithHttpAddress names the runtime's own.
+	baseHttpUrl := defaultCloudConfig.HttpUrl
+	if paired, ok := defaultHttpUrlFor(flightAddress); ok {
+		baseHttpUrl = paired
+	}
 	spiceClient := &SpiceClient{
 		flightAddress: flightAddress,
-		baseHttpUrl:   defaultCloudConfig.HttpUrl,
+		baseHttpUrl:   baseHttpUrl,
 		httpClient: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 10,
@@ -103,6 +113,7 @@ func WithFlightAddress(address string) SpiceClientModifier {
 func WithHttpAddress(address string) SpiceClientModifier {
 	return func(c *SpiceClient) error {
 		c.baseHttpUrl = address
+		c.httpAddressSet = true
 		return nil
 	}
 }
@@ -154,6 +165,20 @@ func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 		err := opt(c)
 		if err != nil {
 			return err
+		}
+	}
+
+	// Options may have moved the Flight endpoint (WithFlightAddress,
+	// WithSpiceCloudAddress). Unless the caller named an HTTP endpoint of their
+	// own, follow it, so both halves of the client address the same runtime.
+	// Resolved from the Flight address the options settled on, so an address
+	// with no known counterpart falls back to the Cloud endpoint this client has
+	// always defaulted to rather than keeping one derived for a different runtime.
+	if !c.httpAddressSet {
+		if paired, ok := defaultHttpUrlFor(c.flightAddress); ok {
+			c.baseHttpUrl = paired
+		} else {
+			c.baseHttpUrl = defaultCloudConfig.HttpUrl
 		}
 	}
 
@@ -257,6 +282,28 @@ func FlightHeadersInterceptor(headers map[string]string) grpc.UnaryClientInterce
 
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+// defaultHttpUrlFor returns the HTTP endpoint that belongs with a Flight
+// endpoint, and whether that pairing is known at all. The runtime serves Flight
+// and HTTP as one deployment, so a client querying a local runtime has to reach
+// that runtime's HTTP API too — pairing a local Flight address with the Cloud
+// HTTP endpoint means health checks, dataset refreshes, search and NSQL all
+// report on a runtime the caller never named.
+//
+// Only the two default endpoints have a counterpart this client can name. Any
+// other Flight address — a self-hosted runtime, one behind a proxy — may serve
+// its HTTP API anywhere, so it reports false and the caller keeps the HTTP
+// endpoint it already had rather than being pointed at this machine.
+func defaultHttpUrlFor(flightAddress string) (string, bool) {
+	switch flightAddress {
+	case defaultCloudConfig.FlightUrl:
+		return defaultCloudConfig.HttpUrl, true
+	case defaultLocalConfig.FlightUrl:
+		return defaultLocalConfig.HttpUrl, true
+	default:
+		return "", false
 	}
 }
 
