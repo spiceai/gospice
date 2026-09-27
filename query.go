@@ -17,8 +17,11 @@ import (
 func (c *SpiceClient) Sql(ctx context.Context, sql string) (array.RecordReader, error) {
 	var rdr array.RecordReader
 	err := backoff.Retry(func() error {
-		var err error
-		rdr, err = queryInternal(ctx, c.flightClient, c.appId, c.apiKey, sql)
+		err := c.withSession(ctx, func(ctx context.Context) error {
+			var err error
+			rdr, err = queryInternal(ctx, c.flightClient, sql)
+			return err
+		})
 		if err != nil {
 			st, ok := status.FromError(err)
 			if ok {
@@ -44,20 +47,13 @@ func (c *SpiceClient) Sql(ctx context.Context, sql string) (array.RecordReader, 
 	return rdr, nil
 }
 
-func queryInternal(ctx context.Context, client flight.Client, appId string, apiKey string, sql string) (array.RecordReader, error) {
+// queryInternal runs sql over client. ctx must already carry the Flight session
+// (see withSession).
+func queryInternal(ctx context.Context, client flight.Client, sql string) (array.RecordReader, error) {
 	if client == nil {
 		return nil, fmt.Errorf("flight client is not initialized")
 	}
-
-	// Only authenticate if credentials are provided
 	queryCtx := ctx
-	if appId != "" && apiKey != "" {
-		authContext, err := client.AuthenticateBasicToken(ctx, appId, apiKey)
-		if err != nil {
-			return nil, err
-		}
-		queryCtx = authContext
-	}
 
 	fd := &flight.FlightDescriptor{
 		Type: flight.DescriptorCMD,

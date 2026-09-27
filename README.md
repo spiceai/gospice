@@ -38,6 +38,8 @@ if err := spice.Init(
 }
 ```
 
+The client authenticates once. The runtime answers the first call's handshake with a session, and every later call — `Sql`, `Query`, and the async query actions — is sent under that session rather than paying a handshake of its own. When the runtime no longer recognises the session, after an hour of inactivity or a restart, the next call renews it and proceeds; a credential the runtime refuses outright is reported, not retried. `SqlWithParams` runs over an ADBC connection with its own session and re-authenticates the same way.
+
 1. Execute a query and get back an Apache Arrow Reader.
 
 ```go
