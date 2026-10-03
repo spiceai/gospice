@@ -395,7 +395,6 @@ defer reader.Release()
 
 for reader.Next() {
     record := reader.RecordBatch()
-    defer record.Release()
     // Process record...
 }
 

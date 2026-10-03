@@ -250,7 +250,6 @@ func TestSqlWithParamsUsingTypedParams(t *testing.T) {
 			// Verify we can read results
 			if reader.Next() {
 				rec := reader.RecordBatch()
-				defer rec.Release()
 				if rec.NumRows() == 0 {
 					t.Error("expected at least one row")
 				}
@@ -284,7 +283,6 @@ func TestSqlWithParamsAlias(t *testing.T) {
 
 	if reader.Next() {
 		rec := reader.RecordBatch()
-		defer rec.Release()
 		if rec.NumRows() == 0 {
 			t.Error("expected at least one row")
 		}
