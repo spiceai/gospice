@@ -14,7 +14,7 @@ import (
 
 func ExampleSpiceClient_Sql() {
 	spice := gospice.NewSpiceClient()
-	defer spice.Close()
+	defer func() { _ = spice.Close() }()
 
 	if err := spice.Init(
 		gospice.WithApiKey(os.Getenv("SPICE_API_KEY")),
@@ -42,7 +42,7 @@ func ExampleSpiceClient_Sql() {
 
 func ExampleSpiceClient_Init_local() {
 	spice := gospice.NewSpiceClient()
-	defer spice.Close()
+	defer func() { _ = spice.Close() }()
 
 	if err := spice.Init(
 		gospice.WithFlightAddress("grpc://localhost:50052"),
