@@ -167,6 +167,9 @@ func main() {
         record := reader.RecordBatch()
         fmt.Println(record)
     }
+    if err := reader.Err(); err != nil {
+        panic(err)
+    }
 }
 ```
 

@@ -84,6 +84,9 @@ for reader.Next() {
     record := reader.RecordBatch()
     fmt.Println(record)
 }
+if err := reader.Err(); err != nil {
+    panic(fmt.Errorf("error reading results: %w", err))
+}
 ```
 
 Query with multiple parameters:
@@ -187,6 +190,9 @@ defer reader.Release()
 
 for reader.Next() {
     fmt.Println(reader.RecordBatch())
+}
+if err := reader.Err(); err != nil {
+    panic(fmt.Errorf("error reading results: %w", err))
 }
 ```
 
