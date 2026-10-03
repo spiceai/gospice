@@ -166,7 +166,6 @@ func main() {
     for reader.Next() {
         record := reader.RecordBatch()
         fmt.Println(record)
-        record.Release()
     }
 }
 ```
@@ -178,7 +177,6 @@ package main
 
 import (
     "context"
-    "github.com/apache/arrow-go/v18/arrow"
     gospice "github.com/spiceai/gospice/v9"
 )
 

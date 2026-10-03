@@ -10,7 +10,7 @@ For full documentation visit [docs.spice.ai](https://docs.spice.ai/sdks/go).
 
 1. Get the gospice package.
 
-```go
+```bash
 go get github.com/spiceai/gospice/v9@latest
 ```
 
@@ -20,19 +20,19 @@ go get github.com/spiceai/gospice/v9@latest
 import "github.com/spiceai/gospice/v9"
 ```
 
-1. Create a SpiceClient passing in your API key. Get your free API key at [spice.ai](https://spice.ai).
+1. Create a SpiceClient.
 
 ```go
-spice := NewSpiceClient()
+spice := gospice.NewSpiceClient()
 defer spice.Close()
 ```
 
-1. Initialize the SpiceClient with spice.ai cloud.
+1. Initialize the SpiceClient with Spice Cloud, passing in your API key. Get your free API key at [spice.ai](https://spice.ai).
 
 ```go
 if err := spice.Init(
-    spice.WithApiKey(ApiKey),
-    spice.WithSpiceCloudAddress()
+    gospice.WithApiKey(os.Getenv("SPICE_API_KEY")),
+    gospice.WithSpiceCloudAddress(),
 ); err != nil {
     panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 }
@@ -55,10 +55,14 @@ The client authenticates once. The runtime answers the first call's handshake wi
 ```go
     for reader.Next() {
         record := reader.RecordBatch()
-        defer record.Release()
         fmt.Println(record)
     }
+    if err := reader.Err(); err != nil {
+        panic(fmt.Errorf("error reading results: %w", err))
+    }
 ```
+
+The reader owns each record batch and releases it on the next call to `Next`, so don't call `Release` on it. To keep a batch past that point, call `record.Retain()` and `Release` it when you are done.
 
 ### Using Parameterized Queries (Recommended)
 
@@ -78,7 +82,6 @@ defer reader.Release()
 
 for reader.Next() {
     record := reader.RecordBatch()
-    defer record.Release()
     fmt.Println(record)
 }
 ```
@@ -157,7 +160,7 @@ Configure with a custom flight address:
 
 ```go
 if err := spice.Init(
-    spice.WithFlightAddress("grpc://localhost:50052")
+    gospice.WithFlightAddress("grpc://localhost:50052"),
 ); err != nil {
     panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 }
@@ -298,7 +301,7 @@ Flight address has no paired HTTP endpoint, so pass `WithHttpAddress` — as you
 when the runtime serves its HTTP API somewhere else:
 
 ```go
-if err := spice.Init(spice.WithHttpAddress("http://127.0.0.1:8091")); err != nil {
+if err := spice.Init(gospice.WithHttpAddress("http://127.0.0.1:8091")); err != nil {
     panic(fmt.Errorf("error initializing SpiceClient: %w", err))
 }
 ```
@@ -415,7 +418,7 @@ reader, err := spice.Sql(ctx, sql)
 
 ## Example
 
-Run `go run .` to execute a sample query and print the results to the console.
+Run `go run ./cmd` to execute a sample query and print the results to the console.
 
 See [query_test.go](query_test.go) for examples on querying TPC-H and taxi trips datasets.
 
@@ -425,7 +428,7 @@ The `SpiceClient` implements connection retry mechanism (3 attempts by default).
 The number of attempts can be configured via `SetMaxRetries`:
 
 ```go
-spice := NewSpiceClient()
+spice := gospice.NewSpiceClient()
 spice.SetMaxRetries(5) // Setting to 0 will disable retries
 ```
 
