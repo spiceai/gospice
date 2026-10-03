@@ -54,10 +54,8 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 			record := reader.RecordBatch()
 
 			if record.NumRows() == 0 {
-				record.Release()
 				t.Fatalf("Expected at least 1 row, got %d", record.NumRows())
 			}
-			record.Release()
 		}
 	})
 
@@ -102,7 +100,6 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 				}
 			}
 
-			record.Release()
 		}
 
 		if recordCount > 5 {
@@ -184,7 +181,6 @@ func TestADBCCloudBasicQuery(t *testing.T) {
 				}
 			}
 
-			record.Release()
 		}
 
 		if recordCount == 0 {
@@ -251,7 +247,6 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 				}
 			}
 
-			record.Release()
 		}
 
 		if rowCount == 0 {
@@ -319,7 +314,6 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 				}
 			}
 
-			record.Release()
 		}
 
 		if rowCount == 0 {
@@ -368,7 +362,6 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 				}
 			}
 
-			record.Release()
 		}
 
 		if rowCount == 0 {
@@ -417,7 +410,6 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 				}
 			}
 
-			record.Release()
 		}
 
 		if rowCount == 0 {
@@ -488,7 +480,6 @@ func TestADBCLocalBasicQuery(t *testing.T) {
 				}
 			}
 
-			record.Release()
 		}
 
 		if rowCount == 0 {
@@ -513,7 +504,6 @@ func TestADBCLocalBasicQuery(t *testing.T) {
 		for reader.Next() {
 			record := reader.RecordBatch()
 			rowCount += int(record.NumRows())
-			record.Release()
 		}
 
 		if rowCount != 1 {

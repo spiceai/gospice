@@ -44,7 +44,6 @@ func TestBasicQuery(t *testing.T) {
 
 		for reader.Next() {
 			record := reader.RecordBatch()
-			defer record.Release()
 
 			if record.NumRows() != 10 {
 				t.Fatalf("Expected 10 rows, got %d", record.NumRows())
@@ -120,8 +119,7 @@ func TestLocalRuntime(t *testing.T) {
 		defer reader.Release()
 
 		for reader.Next() {
-			record := reader.RecordBatch()
-			defer record.Release()
+			_ = reader.RecordBatch()
 		}
 	})
 }
@@ -177,7 +175,6 @@ func TestSqlWithoutAuth(t *testing.T) {
 		for reader.Next() {
 			record := reader.RecordBatch()
 			rowCount += int(record.NumRows())
-			record.Release()
 		}
 
 		if rowCount != 1 {
@@ -204,7 +201,6 @@ func TestSqlWithoutAuth(t *testing.T) {
 		for reader.Next() {
 			record := reader.RecordBatch()
 			rowCount += int(record.NumRows())
-			record.Release()
 		}
 
 		if rowCount == 0 {
@@ -257,7 +253,6 @@ func TestSqlWithAuth(t *testing.T) {
 		for reader.Next() {
 			record := reader.RecordBatch()
 			rowCount += int(record.NumRows())
-			record.Release()
 		}
 
 		if rowCount != 1 {
@@ -284,7 +279,6 @@ func TestSqlWithAuth(t *testing.T) {
 		for reader.Next() {
 			record := reader.RecordBatch()
 			rowCount += int(record.NumRows())
-			record.Release()
 		}
 
 		if rowCount == 0 {

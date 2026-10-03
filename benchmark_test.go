@@ -42,8 +42,7 @@ func BenchmarkCloudQuery(b *testing.B) {
 		}
 
 		for reader.Next() {
-			record := reader.RecordBatch()
-			record.Release()
+			_ = reader.RecordBatch()
 		}
 		reader.Release()
 	}
@@ -85,8 +84,7 @@ func BenchmarkCloudSqlWithParams(b *testing.B) {
 		}
 
 		for reader.Next() {
-			record := reader.RecordBatch()
-			record.Release()
+			_ = reader.RecordBatch()
 		}
 		reader.Release()
 	}
@@ -118,8 +116,7 @@ func BenchmarkLocalQuery(b *testing.B) {
 		}
 
 		for reader.Next() {
-			record := reader.RecordBatch()
-			record.Release()
+			_ = reader.RecordBatch()
 		}
 		reader.Release()
 	}
@@ -153,8 +150,7 @@ func BenchmarkLocalSqlWithParams(b *testing.B) {
 		}
 
 		for reader.Next() {
-			record := reader.RecordBatch()
-			record.Release()
+			_ = reader.RecordBatch()
 		}
 		reader.Release()
 	}
@@ -204,8 +200,7 @@ func BenchmarkParameterBinding(b *testing.B) {
 				}
 
 				for reader.Next() {
-					record := reader.RecordBatch()
-					record.Release()
+					_ = reader.RecordBatch()
 				}
 				reader.Release()
 			}
@@ -302,8 +297,7 @@ func BenchmarkRecordProcessing(b *testing.B) {
 			}
 
 			for reader.Next() {
-				record := reader.RecordBatch()
-				record.Release()
+				_ = reader.RecordBatch()
 			}
 			reader.Release()
 		}
@@ -331,7 +325,6 @@ func BenchmarkRecordProcessing(b *testing.B) {
 						}
 					}
 				}
-				record.Release()
 			}
 			reader.Release()
 			_ = sum // prevent optimization
