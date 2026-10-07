@@ -360,6 +360,17 @@ func TestSearchRejectsResponseMissingRequiredFields(t *testing.T) {
 		{"match without score", `{"results": [{"matches": {}, "dataset": "d"}], "duration_ms": 3}`, `result 0 is missing "_score"`},
 		{"match without matches", `{"results": [{"dataset": "d", "_score": 0.9}], "duration_ms": 3}`, `result 0 is missing "matches"`},
 		{"null match", `{"results": [null], "duration_ms": 3}`, `result 0 is null`},
+		// encoding/json matches struct tags case-insensitively; the runtime's
+		// field names are exact, so differently-cased keys are not them.
+		{"uppercase fields", `{"RESULTS": [], "DURATION_MS": 3}`, `unexpected key`},
+		{"uppercase duration", `{"results": [], "Duration_Ms": 3}`, `unexpected key "Duration_Ms"`},
+		{"uppercase match fields", `{"results": [{"MATCHES": {}, "DATASET": "d", "_SCORE": 0.9}], "duration_ms": 3}`, `result 0 has unexpected key`},
+		{"uppercase score", `{"results": [{"matches": {}, "dataset": "d", "_SCORE": 0.9}], "duration_ms": 3}`, `result 0 has unexpected key "_SCORE"`},
+		// A differently-cased duplicate would be read by the struct decoder but
+		// not by the exact-name check, so the two would judge different data.
+		{"cased duplicate results, legacy score", `{"results": [{"dataset": "d", "matches": {}, "score": 0.5}], "RESULTS": [], "duration_ms": 1}`, `unexpected key "RESULTS"`},
+		{"cased duplicate results", `{"results": [{"dataset": "d", "matches": {}, "_score": 0.5}], "RESULTS": [], "duration_ms": 1}`, `unexpected key "RESULTS"`},
+		{"cased duplicate dataset", `{"results": [{"dataset": "d", "DATASET": "e", "matches": {}, "_score": 0.5}], "duration_ms": 1}`, `result 0 has unexpected key "DATASET"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

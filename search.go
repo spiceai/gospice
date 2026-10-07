@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // SearchRequest describes a search against the runtime's /v1/search endpoint.
@@ -151,46 +152,74 @@ func (c *SpiceClient) Search(ctx context.Context, req *SearchRequest) (*SearchRe
 	return &searchResp, nil
 }
 
-// searchResponseFields records which fields a /v1/search body carried. The
-// runtime always sends these, so a body without one is not a search response,
-// and decoding it as one would yield zero values: an empty search in 0ms,
-// indistinguishable from a real one.
-type searchResponseFields struct {
-	Results *[]*struct {
-		Dataset     *string          `json:"dataset"`
-		Score       *float64         `json:"_score"`
-		LegacyScore *float64         `json:"score"`
-		Matches     *json.RawMessage `json:"matches"`
-	} `json:"results"`
-	DurationMs *json.RawMessage `json:"duration_ms"`
-}
-
 // checkSearchResponseFields fails when body lacks a field the runtime always
-// sends. It also fills Score from "score", the name older runtimes used.
+// sends: without one it is not a search response, and decoding it as one would
+// yield zero values — an empty search in 0ms, indistinguishable from a real one.
+// Keys are looked up by exact name because encoding/json matches struct tags
+// case-insensitively, so {"RESULTS": []} would otherwise pass; a key that
+// differs from one of these only by case is rejected, since the struct decoder
+// would read it where this check does not. It also fills Score from "score",
+// the name older runtimes used.
 func checkSearchResponseFields(body []byte, resp *SearchResponse) error {
-	var fields searchResponseFields
-	if err := json.Unmarshal(body, &fields); err != nil {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(body, &top); err != nil {
 		return err
 	}
-	if fields.Results == nil {
+	if k := casedVariant(top, "results", "duration_ms"); k != "" {
+		return fmt.Errorf("not a search response: unexpected key %q", k)
+	}
+	if !hasJSONField(top, "results") {
 		return fmt.Errorf(`not a search response: missing "results"`)
 	}
-	if fields.DurationMs == nil {
+	if !hasJSONField(top, "duration_ms") {
 		return fmt.Errorf(`not a search response: missing "duration_ms"`)
 	}
-	for i, match := range *fields.Results {
+	var results []map[string]json.RawMessage
+	if err := json.Unmarshal(top["results"], &results); err != nil {
+		return err
+	}
+	if len(results) != len(resp.Results) {
+		return fmt.Errorf("not a search response: %d results decoded, %d present", len(resp.Results), len(results))
+	}
+	for i, match := range results {
+		k := casedVariant(match, "dataset", "matches", "_score", "score")
 		switch {
 		case match == nil:
 			return fmt.Errorf("not a search response: result %d is null", i)
-		case match.Dataset == nil:
+		case k != "":
+			return fmt.Errorf("not a search response: result %d has unexpected key %q", i, k)
+		case !hasJSONField(match, "dataset"):
 			return fmt.Errorf(`not a search response: result %d is missing "dataset"`, i)
-		case match.Matches == nil:
+		case !hasJSONField(match, "matches"):
 			return fmt.Errorf(`not a search response: result %d is missing "matches"`, i)
-		case match.Score == nil && match.LegacyScore == nil:
+		case hasJSONField(match, "_score"):
+		case hasJSONField(match, "score"):
+			if err := json.Unmarshal(match["score"], &resp.Results[i].Score); err != nil {
+				return err
+			}
+		default:
 			return fmt.Errorf(`not a search response: result %d is missing "_score"`, i)
-		case match.Score == nil:
-			resp.Results[i].Score = *match.LegacyScore
 		}
 	}
 	return nil
+}
+
+// casedVariant returns a key of obj that matches one of names case-insensitively
+// but not exactly, or "" when there is none.
+func casedVariant(obj map[string]json.RawMessage, names ...string) string {
+	for k := range obj {
+		for _, name := range names {
+			if k != name && strings.EqualFold(k, name) {
+				return k
+			}
+		}
+	}
+	return ""
+}
+
+// hasJSONField reports whether obj carries key, by exact name, with a non-null
+// value.
+func hasJSONField(obj map[string]json.RawMessage, key string) bool {
+	v, ok := obj[key]
+	return ok && !bytes.Equal(bytes.TrimSpace(v), []byte("null"))
 }
