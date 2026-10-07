@@ -342,3 +342,67 @@ func TestSearchErrorSurfacesJSONMessage(t *testing.T) {
 		})
 	}
 }
+
+// A 200 whose body is not a search response (schema drift, or a proxy
+// answering for the runtime) must not read as zero results in zero
+// milliseconds, which is indistinguishable from a real empty search.
+func TestSearchRejectsResponseMissingRequiredFields(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"empty object", `{}`, `missing "results"`},
+		{"error envelope", `{"error": "upstream timeout"}`, `missing "results"`},
+		{"null results", `{"results": null, "duration_ms": 3}`, `missing "results"`},
+		{"no duration", `{"results": []}`, `missing "duration_ms"`},
+		{"match without dataset", `{"results": [{"matches": {}, "_score": 0.9}], "duration_ms": 3}`, `result 0 is missing "dataset"`},
+		{"match without score", `{"results": [{"matches": {}, "dataset": "d"}], "duration_ms": 3}`, `result 0 is missing "_score"`},
+		{"match without matches", `{"results": [{"dataset": "d", "_score": 0.9}], "duration_ms": 3}`, `result 0 is missing "matches"`},
+		{"null match", `{"results": [null], "duration_ms": 3}`, `result 0 is null`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, tt.body)
+			})
+
+			resp, err := spice.Search(context.Background(), &SearchRequest{Text: "tokyo"})
+			if err == nil {
+				t.Fatalf("expected an error, got %+v", resp)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.want)
+			}
+		})
+	}
+}
+
+func TestSearchAcceptsEmptyResults(t *testing.T) {
+	spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"results": [], "duration_ms": 3}`)
+	})
+
+	resp, err := spice.Search(context.Background(), &SearchRequest{Text: "tokyo"})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(resp.Results) != 0 || resp.DurationMs != 3 {
+		t.Errorf("resp = %+v, want no results in 3ms", resp)
+	}
+}
+
+// Older runtimes serialized the score as "score" rather than "_score".
+func TestSearchAcceptsLegacyScoreName(t *testing.T) {
+	spice := newSearchTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"results": [{"matches": {}, "dataset": "d", "score": 0.5}], "duration_ms": 1}`)
+	})
+
+	resp, err := spice.Search(context.Background(), &SearchRequest{Text: "tokyo"})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if got := resp.Results[0].Score; got != 0.5 {
+		t.Errorf("Score = %v, want 0.5", got)
+	}
+}

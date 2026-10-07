@@ -144,6 +144,53 @@ func (c *SpiceClient) Search(ctx context.Context, req *SearchRequest) (*SearchRe
 	if err := decodeJSONExact(respBody, &searchResp); err != nil {
 		return nil, fmt.Errorf("error decoding response from POST %s: %w", url, err)
 	}
+	if err := checkSearchResponseFields(respBody, &searchResp); err != nil {
+		return nil, fmt.Errorf("error decoding response from POST %s: %w", url, err)
+	}
 
 	return &searchResp, nil
+}
+
+// searchResponseFields records which fields a /v1/search body carried. The
+// runtime always sends these, so a body without one is not a search response,
+// and decoding it as one would yield zero values: an empty search in 0ms,
+// indistinguishable from a real one.
+type searchResponseFields struct {
+	Results *[]*struct {
+		Dataset     *string          `json:"dataset"`
+		Score       *float64         `json:"_score"`
+		LegacyScore *float64         `json:"score"`
+		Matches     *json.RawMessage `json:"matches"`
+	} `json:"results"`
+	DurationMs *json.RawMessage `json:"duration_ms"`
+}
+
+// checkSearchResponseFields fails when body lacks a field the runtime always
+// sends. It also fills Score from "score", the name older runtimes used.
+func checkSearchResponseFields(body []byte, resp *SearchResponse) error {
+	var fields searchResponseFields
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return err
+	}
+	if fields.Results == nil {
+		return fmt.Errorf(`not a search response: missing "results"`)
+	}
+	if fields.DurationMs == nil {
+		return fmt.Errorf(`not a search response: missing "duration_ms"`)
+	}
+	for i, match := range *fields.Results {
+		switch {
+		case match == nil:
+			return fmt.Errorf("not a search response: result %d is null", i)
+		case match.Dataset == nil:
+			return fmt.Errorf(`not a search response: result %d is missing "dataset"`, i)
+		case match.Matches == nil:
+			return fmt.Errorf(`not a search response: result %d is missing "matches"`, i)
+		case match.Score == nil && match.LegacyScore == nil:
+			return fmt.Errorf(`not a search response: result %d is missing "_score"`, i)
+		case match.Score == nil:
+			resp.Results[i].Score = *match.LegacyScore
+		}
+	}
+	return nil
 }
