@@ -214,7 +214,6 @@ package main
 import (
     "context"
     "time"
-    "github.com/apache/arrow-go/v18/arrow"
     gospice "github.com/spiceai/gospice/v9"
 )
 
@@ -226,13 +225,11 @@ func main() {
         panic(err)
     }
 
-    // Query with timestamp
-    startTime := time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)
-    timestamp := arrow.Timestamp(startTime.UnixMicro())
-
+    // time.Time binds as a UTC nanosecond timestamp and time.Duration as a nanosecond duration
     reader, err := client.SqlWithParams(context.Background(),
-        "SELECT * FROM events WHERE created_at > $1",
-        gospice.TimestampParam(timestamp, arrow.Microsecond, "UTC"),
+        "SELECT * FROM events WHERE created_at > $1 AND finished_at - created_at > $2",
+        time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
+        30*time.Minute,
     )
     if err != nil {
         panic(err)
@@ -307,12 +304,13 @@ When types are not explicitly specified:
 2. **Floats**: `float32` → `Float32`, `float64` → `Float64`
 3. **Strings**: `string` → `String` (standard UTF-8)
 4. **Binary**: `[]byte` → `Binary` (variable-length)
-5. **Temporal**: Arrow temporal types → defaults with sensible units
+5. **Go time types**: `time.Time` → `Timestamp` with nanoseconds in UTC (between 1677-09-21 and 2262-04-11), `time.Duration` → `Duration` with nanoseconds
+6. **Arrow temporal types**: defaults with sensible units
    - `Time32` → milliseconds
    - `Time64` → microseconds
    - `Timestamp` → microseconds with UTC
    - `Duration` → microseconds
-6. **Null**: `nil` → `Null`
+7. **Null**: `nil` → `Null`
 
 ## Best Practices
 

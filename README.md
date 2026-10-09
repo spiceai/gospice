@@ -104,6 +104,21 @@ if err != nil {
 defer reader.Release()
 ```
 
+Query with a timestamp and a duration parameter:
+
+```go
+reader, err := spice.SqlWithParams(
+    context.Background(),
+    "SELECT count(*) FROM taxi_trips WHERE tpep_pickup_datetime >= $1 AND tpep_dropoff_datetime - tpep_pickup_datetime > $2",
+    time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
+    30*time.Minute,
+)
+if err != nil {
+    panic(fmt.Errorf("error querying: %w", err))
+}
+defer reader.Release()
+```
+
 **Supported parameter types with automatic type inference:**
 
 - Integers: `int`, `int8`, `int16`, `int32`, `int64`, `uint`, `uint8`, `uint16`, `uint32`, `uint64`
@@ -111,6 +126,8 @@ defer reader.Release()
 - String: `string`
 - Boolean: `bool`
 - Binary: `[]byte`
+- Timestamp: `time.Time`, sent as a UTC timestamp with nanosecond precision. It must be between 1677-09-21 and 2262-04-11.
+- Duration: `time.Duration`
 - Null values: `nil`
 
 **Typed Parameters for Advanced Use Cases:**
