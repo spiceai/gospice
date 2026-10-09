@@ -2,11 +2,37 @@ package gospice
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
+
+// readCount returns the value of a single-row count(*) result.
+func readCount(reader array.RecordReader, err error) (int64, error) {
+	if err != nil {
+		return 0, err
+	}
+	defer reader.Release()
+	var count int64
+	rows := 0
+	for reader.Next() {
+		record := reader.RecordBatch()
+		for i := 0; i < int(record.NumRows()); i++ {
+			count = record.Column(0).(*array.Int64).Value(i)
+			rows++
+		}
+	}
+	if err := reader.Err(); err != nil {
+		return 0, err
+	}
+	if rows != 1 {
+		return 0, fmt.Errorf("expected 1 row, got %d", rows)
+	}
+	return count, nil
+}
 
 // TestADBCCloudBasicQuery tests basic ADBC query functionality against Spice Cloud
 func TestADBCCloudBasicQuery(t *testing.T) {
@@ -419,6 +445,53 @@ func TestADBCLocalParameterizedQuery(t *testing.T) {
 			t.Fatalf("Expected at most 5 rows (LIMIT 5), got %d", rowCount)
 		}
 		t.Logf("Parameterized query with integer returned %d rows", rowCount)
+	})
+
+	t.Run("Local - Parameterized Query with time.Time", func(t *testing.T) {
+		ctx := context.Background()
+		want, err := readCount(spice.Sql(ctx,
+			"SELECT count(*) FROM taxi_trips WHERE tpep_pickup_datetime >= TIMESTAMP '2024-01-31T00:00:00Z'"))
+		if err != nil {
+			t.Fatalf("error executing literal query: %v", err)
+		}
+		if want == 0 {
+			t.Fatal("expected trips on or after 2024-01-31, got 0")
+		}
+
+		sql := "SELECT count(*) FROM taxi_trips WHERE tpep_pickup_datetime >= $1"
+		for _, start := range []time.Time{
+			time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
+			time.Date(2024, 1, 30, 19, 0, 0, 0, time.FixedZone("UTC-5", -5*3600)),
+		} {
+			got, err := readCount(spice.SqlWithParams(ctx, sql, start))
+			if err != nil {
+				t.Fatalf("error executing parameterized query with %s: %v", start, err)
+			}
+			if got != want {
+				t.Errorf("tpep_pickup_datetime >= %s: expected %d trips, got %d", start, want, got)
+			}
+		}
+	})
+
+	t.Run("Local - Parameterized Query with time.Duration", func(t *testing.T) {
+		ctx := context.Background()
+		want, err := readCount(spice.Sql(ctx,
+			"SELECT count(*) FROM taxi_trips WHERE tpep_dropoff_datetime - tpep_pickup_datetime > INTERVAL '30 minutes'"))
+		if err != nil {
+			t.Fatalf("error executing literal query: %v", err)
+		}
+		if want == 0 {
+			t.Fatal("expected trips longer than 30 minutes, got 0")
+		}
+
+		got, err := readCount(spice.SqlWithParams(ctx,
+			"SELECT count(*) FROM taxi_trips WHERE tpep_dropoff_datetime - tpep_pickup_datetime > $1", 30*time.Minute))
+		if err != nil {
+			t.Fatalf("error executing parameterized query: %v", err)
+		}
+		if got != want {
+			t.Errorf("expected %d trips longer than 30 minutes, got %d", want, got)
+		}
 	})
 }
 

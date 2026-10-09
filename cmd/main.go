@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	gospice "github.com/spiceai/gospice/v9"
 )
@@ -45,6 +46,31 @@ func querySpiceLocal() {
 	}
 
 	reader, err := spice.Sql(context.Background(), "SELECT * FROM taxi_trips LIMIT 10")
+	if err != nil {
+		panic(fmt.Errorf("error querying: %w", err))
+	}
+	defer reader.Release()
+
+	for reader.Next() {
+		fmt.Println(reader.RecordBatch())
+	}
+}
+
+// parameterizedQueryLocal binds a time.Time and a time.Duration as query
+// parameters. Their Arrow types are inferred.
+func parameterizedQueryLocal() {
+	spice := gospice.NewSpiceClient()
+	defer func() { _ = spice.Close() }()
+
+	if err := spice.Init(); err != nil {
+		panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+	}
+
+	reader, err := spice.SqlWithParams(context.Background(),
+		"SELECT count(*) AS long_trips FROM taxi_trips WHERE tpep_pickup_datetime >= $1 AND tpep_dropoff_datetime - tpep_pickup_datetime > $2",
+		time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
+		30*time.Minute,
+	)
 	if err != nil {
 		panic(fmt.Errorf("error querying: %w", err))
 	}
@@ -117,6 +143,7 @@ func localDatasetRefresh() {
 func main() {
 	querySpiceCloud()
 	querySpiceLocal()
+	parameterizedQueryLocal()
 	asyncQueryLocal()
 	localDatasetRefresh()
 }

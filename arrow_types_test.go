@@ -2,6 +2,7 @@ package gospice
 
 import (
 	"testing"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -43,6 +44,8 @@ func TestInferArrowType(t *testing.T) {
 		{"time64", arrow.Time64(43200000000), arrow.FixedWidthTypes.Time64us},                // Microseconds since midnight
 		{"timestamp", arrow.Timestamp(1609459200000000), arrow.FixedWidthTypes.Timestamp_us}, // Microseconds since epoch
 		{"duration", arrow.Duration(1000000), arrow.FixedWidthTypes.Duration_us},             // Duration in microseconds
+		{"time.Time", time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), arrow.FixedWidthTypes.Timestamp_ns},
+		{"time.Duration", 30 * time.Minute, arrow.FixedWidthTypes.Duration_ns},
 
 		// Null type
 		{"nil", nil, arrow.Null},
@@ -338,6 +341,76 @@ func TestAppendValueToBuilder(t *testing.T) {
 			t.Errorf("expected 1000000, got %v", arr.(*array.Duration).Value(0))
 		}
 	})
+
+	// 2024-01-30T19:00:00.123456789-05:00 is 2024-01-31T00:00:00.123456789Z.
+	localTime := time.Date(2024, 1, 30, 19, 0, 0, 123456789, time.FixedZone("UTC-5", -5*3600))
+
+	t.Run("time.Time nanoseconds", func(t *testing.T) {
+		builder := array.NewTimestampBuilder(mem, arrow.FixedWidthTypes.Timestamp_ns.(*arrow.TimestampType))
+		defer builder.Release()
+		if err := appendValueToBuilder(builder, localTime); err != nil {
+			t.Fatalf("appendValueToBuilder failed: %v", err)
+		}
+		arr := builder.NewArray()
+		defer arr.Release()
+		if got := arr.(*array.Timestamp).Value(0); got != arrow.Timestamp(1706659200123456789) {
+			t.Errorf("expected 1706659200123456789, got %v", got)
+		}
+	})
+
+	t.Run("time.Time microseconds", func(t *testing.T) {
+		builder := array.NewTimestampBuilder(mem, arrow.FixedWidthTypes.Timestamp_us.(*arrow.TimestampType))
+		defer builder.Release()
+		if err := appendValueToBuilder(builder, localTime); err != nil {
+			t.Fatalf("appendValueToBuilder failed: %v", err)
+		}
+		arr := builder.NewArray()
+		defer arr.Release()
+		if got := arr.(*array.Timestamp).Value(0); got != arrow.Timestamp(1706659200123456) {
+			t.Errorf("expected 1706659200123456, got %v", got)
+		}
+	})
+
+	t.Run("time.Time outside the nanosecond range", func(t *testing.T) {
+		for _, v := range []time.Time{
+			{},
+			time.Date(1677, 9, 21, 0, 12, 43, 0, time.UTC),
+			time.Date(2262, 4, 11, 23, 47, 17, 0, time.UTC),
+			time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC),
+		} {
+			builder := array.NewTimestampBuilder(mem, arrow.FixedWidthTypes.Timestamp_ns.(*arrow.TimestampType))
+			if err := appendValueToBuilder(builder, v); err == nil {
+				t.Errorf("expected an error for %s, got none", v)
+			}
+			builder.Release()
+		}
+	})
+
+	t.Run("time.Duration nanoseconds", func(t *testing.T) {
+		builder := array.NewDurationBuilder(mem, arrow.FixedWidthTypes.Duration_ns.(*arrow.DurationType))
+		defer builder.Release()
+		if err := appendValueToBuilder(builder, 90*time.Minute+1500*time.Nanosecond); err != nil {
+			t.Fatalf("appendValueToBuilder failed: %v", err)
+		}
+		arr := builder.NewArray()
+		defer arr.Release()
+		if got := arr.(*array.Duration).Value(0); got != arrow.Duration(5400000001500) {
+			t.Errorf("expected 5400000001500, got %v", got)
+		}
+	})
+
+	t.Run("time.Duration microseconds", func(t *testing.T) {
+		builder := array.NewDurationBuilder(mem, arrow.FixedWidthTypes.Duration_us.(*arrow.DurationType))
+		defer builder.Release()
+		if err := appendValueToBuilder(builder, 90*time.Minute+1500*time.Nanosecond); err != nil {
+			t.Fatalf("appendValueToBuilder failed: %v", err)
+		}
+		arr := builder.NewArray()
+		defer arr.Release()
+		if got := arr.(*array.Duration).Value(0); got != arrow.Duration(5400000001) {
+			t.Errorf("expected 5400000001, got %v", got)
+		}
+	})
 }
 
 // TestComprehensiveArrowTypes tests the full pipeline: infer type -> create builder -> append value -> validate
@@ -358,6 +431,8 @@ func TestComprehensiveArrowTypes(t *testing.T) {
 		"comprehensive test",
 		true,
 		[]byte("binary data"),
+		time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
+		30 * time.Minute,
 	}
 
 	for i, val := range testValues {

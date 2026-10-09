@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-adbc/go/adbc/driver/flightsql"
@@ -254,13 +256,14 @@ func (c *SpiceClient) closeADBC() error {
 // Parameters should use positional placeholders (e.g., $1, $2) in the SQL query
 //
 // Parameters can be:
-// - Simple Go values (int, string, bool, etc.) - type will be inferred
+// - Simple Go values (int, string, bool, time.Time, time.Duration, etc.) - type will be inferred
 // - Param structs with explicit type annotation using NewTypedParam() or helper functions
 // - Arrow types (arrow.Date32, arrow.Timestamp, etc.)
 //
 // Example:
 //
 //	reader, err := client.SqlWithParams(ctx, "SELECT * FROM table WHERE id = $1 AND name = $2", 123, "test")
+//	reader, err := client.SqlWithParams(ctx, "SELECT * FROM table WHERE ts >= $1", time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC))
 //	reader, err := client.SqlWithParams(ctx, "SELECT * FROM table WHERE ts = $1", TimestampParam(ts, arrow.Microsecond, "UTC"))
 func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...any) (array.RecordReader, error) {
 	// Take a lease on the ADBC connection so a concurrent re-authentication can
@@ -592,6 +595,11 @@ func inferArrowType(val any) (arrow.DataType, error) {
 	case arrow.Duration:
 		// Default to microseconds if not specified
 		return arrow.FixedWidthTypes.Duration_us, nil
+	case time.Time:
+		// Nanoseconds keep the full precision of a time.Time.
+		return arrow.FixedWidthTypes.Timestamp_ns, nil
+	case time.Duration:
+		return arrow.FixedWidthTypes.Duration_ns, nil
 
 	// Interval types
 	case arrow.MonthInterval:
@@ -615,6 +623,12 @@ func inferArrowType(val any) (arrow.DataType, error) {
 		return nil, fmt.Errorf("unsupported parameter type: %T (use NewTypedParam for explicit type control)", v)
 	}
 }
+
+// minNanoTime and maxNanoTime bound the instants a nanosecond timestamp can hold.
+var (
+	minNanoTime = time.Unix(0, math.MinInt64).UTC()
+	maxNanoTime = time.Unix(0, math.MaxInt64).UTC()
+)
 
 // appendValueToBuilder appends a value to an Arrow array builder
 func appendValueToBuilder(builder array.Builder, val any) error {
@@ -758,15 +772,25 @@ func appendValueToBuilder(builder array.Builder, val any) error {
 			return fmt.Errorf("cannot convert %T to arrow.Time64", val)
 		}
 	case *array.TimestampBuilder:
-		if v, ok := val.(arrow.Timestamp); ok {
+		switch v := val.(type) {
+		case arrow.Timestamp:
 			b.Append(v)
-		} else {
+		case time.Time:
+			if b.Type().(*arrow.TimestampType).Unit == arrow.Nanosecond && (v.Before(minNanoTime) || v.After(maxNanoTime)) {
+				return fmt.Errorf("cannot convert %s to a nanosecond timestamp: outside %s to %s",
+					v.Format(time.RFC3339Nano), minNanoTime.Format(time.RFC3339Nano), maxNanoTime.Format(time.RFC3339Nano))
+			}
+			b.AppendTime(v)
+		default:
 			return fmt.Errorf("cannot convert %T to arrow.Timestamp", val)
 		}
 	case *array.DurationBuilder:
-		if v, ok := val.(arrow.Duration); ok {
+		switch v := val.(type) {
+		case arrow.Duration:
 			b.Append(v)
-		} else {
+		case time.Duration:
+			b.Append(arrow.Duration(v / b.Type().(*arrow.DurationType).Unit.Multiplier()))
+		default:
 			return fmt.Errorf("cannot convert %T to arrow.Duration", val)
 		}
 
