@@ -311,6 +311,12 @@ When types are not explicitly specified:
    - `Timestamp` → microseconds with UTC
    - `Duration` → microseconds
 7. **Null**: `nil` → `Null`
+8. **Pointers**: bind as the value they point to; a nil pointer is a NULL typed like the pointed-to value (`(*int64)(nil)` → `Int64` NULL)
+9. **`database/sql` null types**: `sql.NullInt64`, `sql.NullInt32`, `sql.NullInt16`, `sql.NullByte`, `sql.NullFloat64`, `sql.NullBool`, `sql.NullString`, `sql.NullTime` and `sql.Null[T]` bind as their value, or as a typed NULL when `Valid` is false
+10. **Other `driver.Valuer`s**: bind as what `Value()` returns
+11. **Named types** over a basic kind (`type VendorID int64`, `type Label string`, `type Payload []byte`) bind as that kind
+
+A type with an explicit rule of its own keeps it: `time.Duration` is a named `int64` but still binds as a `Duration`, and `arrow.Date32` as a `Date32`.
 
 ## Best Practices
 
