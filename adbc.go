@@ -489,6 +489,11 @@ func (c *SpiceClient) bindParameters(client *ADBCClient, stmt adbc.Statement, pa
 		}
 
 		value, nullType, err := normalizeParamValue(value)
+		var untypedNull *untypedNullError
+		if err != nil && explicitType != nil && errors.As(err, &untypedNull) {
+			// A NULL whose Go type has no Arrow equivalent; the explicit type covers it.
+			value, err = nil, nil
+		}
 		if err != nil {
 			return fmt.Errorf("error reading parameter %d: %w", i, err)
 		}

@@ -53,6 +53,15 @@ type upperValuer string
 
 func (u upperValuer) Value() (driver.Value, error) { return strings.ToUpper(string(u)), nil }
 
+// ptrValuer implements driver.Valuer only on its pointer receiver.
+type ptrValuer int64
+
+func (v *ptrValuer) Value() (driver.Value, error) { return fmt.Sprintf("pv-%d", int64(*v)), nil }
+
+// namedByte is a byte whose slice type is not convertible to []byte.
+type namedByte byte
+type namedBytes []namedByte
+
 type failingValuer struct{}
 
 func (failingValuer) Value() (driver.Value, error) { return nil, errors.New("no value") }
@@ -69,6 +78,7 @@ func TestBindParametersAcceptsNullableAndNamedValues(t *testing.T) {
 	var nilInt *int64
 	var nilTime *time.Time
 	var nilNull *sql.NullInt64
+	pv := ptrValuer(5)
 
 	tests := []struct {
 		name     string
@@ -99,8 +109,11 @@ func TestBindParametersAcceptsNullableAndNamedValues(t *testing.T) {
 		{"sql.Null[int32] valid", sql.Null[int32]{V: 4, Valid: true}, arrow.PrimitiveTypes.Int32, false, int32(4)},
 		{"sql.Null[vendorID] null", sql.Null[vendorID]{}, arrow.PrimitiveTypes.Int64, true, nil},
 		{"custom driver.Valuer", upperValuer("cmt"), arrow.BinaryTypes.String, false, "CMT"},
+		{"pointer-receiver driver.Valuer", &pv, arrow.BinaryTypes.String, false, "pv-5"},
 		{"Param over a pointer", NewParam(&n), arrow.PrimitiveTypes.Int64, false, int64(7)},
 		{"typed Param over a null", NewTypedParam(sql.NullInt64{}, arrow.PrimitiveTypes.Int32), arrow.PrimitiveTypes.Int32, true, nil},
+		{"typed Param over a nil unsupported pointer", NewTypedParam((*struct{ X int })(nil), arrow.BinaryTypes.String), arrow.BinaryTypes.String, true, nil},
+		{"typed Param over an invalid sql.Null of an unsupported type", NewTypedParam(sql.Null[struct{ X int }]{}, arrow.PrimitiveTypes.Int64), arrow.PrimitiveTypes.Int64, true, nil},
 	}
 
 	for _, tt := range tests {
@@ -150,6 +163,8 @@ func TestBindParametersReportsUnusableValues(t *testing.T) {
 		{"self-returning driver.Valuer", selfValuer{}, "levels of pointers or driver.Valuer results"},
 		{"unsupported struct", struct{ X int }{1}, "unsupported parameter type"},
 		{"pointer to unsupported", &struct{ X int }{1}, "unsupported parameter type"},
+		{"nil pointer to unsupported", (*struct{ X int })(nil), "unsupported parameter type"},
+		{"slice of a named byte", namedBytes{1, 2}, "unsupported parameter type"},
 		{"map", map[string]int{"a": 1}, "unsupported parameter type"},
 	}
 	for _, tt := range tests {

@@ -238,27 +238,48 @@ func normalizeParamValueDepth(val any, depth int) (any, arrow.DataType, error) {
 		if rv.IsNil() {
 			return typedNull(reflect.Zero(rt.Elem()).Interface(), depth)
 		}
+		// A Valuer with a pointer receiver is lost once the pointer is
+		// dereferenced, so call it here. One with a value receiver, such as
+		// sql.NullInt64, is unwrapped below where its NULL can stay typed.
+		if rt.Implements(valuerType) && !rt.Elem().Implements(valuerType) {
+			return valueOf(val.(driver.Valuer), depth)
+		}
 		return normalizeParamValueDepth(rv.Elem().Interface(), depth+1)
 	}
 
 	if valuer, ok := val.(driver.Valuer); ok {
-		driverValue, err := valuer.Value()
-		if err != nil {
-			return nil, nil, fmt.Errorf("parameter of type %T: driver.Valuer: %w", val, err)
-		}
-		return normalizeParamValueDepth(driverValue, depth+1)
+		return valueOf(valuer, depth)
 	}
 
 	if basic, ok := basicKindTypes[rt.Kind()]; ok && rt.ConvertibleTo(basic) {
 		return rv.Convert(basic).Interface(), nil, nil
 	}
-	if rt.Kind() == reflect.Slice && rt.Elem().Kind() == reflect.Uint8 {
-		return rv.Convert(reflect.TypeFor[[]byte]()).Interface(), nil, nil
+	if bytesType := reflect.TypeFor[[]byte](); rt.Kind() == reflect.Slice && rt.ConvertibleTo(bytesType) {
+		return rv.Convert(bytesType).Interface(), nil, nil
 	}
 
 	// Leave the value as it is, so inferArrowType reports it as unsupported.
 	return val, nil, nil
 }
+
+var valuerType = reflect.TypeFor[driver.Valuer]()
+
+// valueOf normalizes the value a driver.Valuer returns.
+func valueOf(valuer driver.Valuer, depth int) (any, arrow.DataType, error) {
+	driverValue, err := valuer.Value()
+	if err != nil {
+		return nil, nil, fmt.Errorf("parameter of type %T: driver.Valuer: %w", valuer, err)
+	}
+	return normalizeParamValueDepth(driverValue, depth+1)
+}
+
+// untypedNullError reports a NULL whose Arrow type could not be inferred from
+// the type it was held in. The value is still a NULL, so a parameter with an
+// explicit type can bind it.
+type untypedNullError struct{ err error }
+
+func (e *untypedNullError) Error() string { return e.err.Error() }
+func (e *untypedNullError) Unwrap() error { return e.err }
 
 // nullable returns value when valid and otherwise a NULL typed like value.
 func nullable(valid bool, value any) (any, arrow.DataType, error) {
@@ -271,12 +292,15 @@ func nullable(valid bool, value any) (any, arrow.DataType, error) {
 // typedNull returns a NULL with the Arrow type zero would bind as.
 func typedNull(zero any, depth int) (any, arrow.DataType, error) {
 	value, nullType, err := normalizeParamValueDepth(zero, depth+1)
-	if err != nil || value == nil {
-		return nil, nullType, err
+	if err != nil {
+		return nil, nil, &untypedNullError{err}
+	}
+	if value == nil {
+		return nil, nullType, nil
 	}
 	dataType, err := inferArrowType(value)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, &untypedNullError{err}
 	}
 	return nil, dataType, nil
 }
