@@ -112,6 +112,7 @@ func TestBindParametersAcceptsNullableAndNamedValues(t *testing.T) {
 		{"pointer-receiver driver.Valuer", &pv, arrow.BinaryTypes.String, false, "pv-5"},
 		{"Param over a pointer", NewParam(&n), arrow.PrimitiveTypes.Int64, false, int64(7)},
 		{"typed Param over a null", NewTypedParam(sql.NullInt64{}, arrow.PrimitiveTypes.Int32), arrow.PrimitiveTypes.Int32, true, nil},
+		{"typed Param over a nil pointer-receiver driver.Valuer", NewTypedParam((*ptrValuer)(nil), arrow.BinaryTypes.String), arrow.BinaryTypes.String, true, nil},
 		{"typed Param over a nil unsupported pointer", NewTypedParam((*struct{ X int })(nil), arrow.BinaryTypes.String), arrow.BinaryTypes.String, true, nil},
 		{"typed Param over an invalid sql.Null of an unsupported type", NewTypedParam(sql.Null[struct{ X int }]{}, arrow.PrimitiveTypes.Int64), arrow.PrimitiveTypes.Int64, true, nil},
 	}
@@ -164,6 +165,7 @@ func TestBindParametersReportsUnusableValues(t *testing.T) {
 		{"unsupported struct", struct{ X int }{1}, "unsupported parameter type"},
 		{"pointer to unsupported", &struct{ X int }{1}, "unsupported parameter type"},
 		{"nil pointer to unsupported", (*struct{ X int })(nil), "unsupported parameter type"},
+		{"nil pointer-receiver driver.Valuer", (*ptrValuer)(nil), "pointer receiver has no inferable type"},
 		{"slice of a named byte", namedBytes{1, 2}, "unsupported parameter type"},
 		{"map", map[string]int{"a": 1}, "unsupported parameter type"},
 	}

@@ -235,13 +235,19 @@ func normalizeParamValueDepth(val any, depth int) (any, arrow.DataType, error) {
 	}
 
 	if rt.Kind() == reflect.Pointer {
+		pointerValuer := rt.Implements(valuerType) && !rt.Elem().Implements(valuerType)
 		if rv.IsNil() {
+			if pointerValuer {
+				// Value() cannot be called on a nil receiver, so the type it
+				// would bind as is unknown; only an explicit type can bind it.
+				return nil, nil, &untypedNullError{fmt.Errorf("parameter of type %T: nil pointer to a driver.Valuer with a pointer receiver has no inferable type (use NewTypedParam for explicit type control)", val)}
+			}
 			return typedNull(reflect.Zero(rt.Elem()).Interface(), depth)
 		}
 		// A Valuer with a pointer receiver is lost once the pointer is
 		// dereferenced, so call it here. One with a value receiver, such as
 		// sql.NullInt64, is unwrapped below where its NULL can stay typed.
-		if rt.Implements(valuerType) && !rt.Elem().Implements(valuerType) {
+		if pointerValuer {
 			return valueOf(val.(driver.Valuer), depth)
 		}
 		return normalizeParamValueDepth(rv.Elem().Interface(), depth+1)
