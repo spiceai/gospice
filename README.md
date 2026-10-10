@@ -130,6 +130,24 @@ defer reader.Release()
 - Duration: `time.Duration`
 - Null values: `nil`
 
+Values in the forms Go code usually holds them also bind directly:
+
+- **Pointers** bind as the value they point to, and a nil pointer binds as a NULL of the pointed-to type. A nil `*int64` is an `Int64` NULL.
+- **`database/sql` null types** (`sql.NullInt64`, `sql.NullString`, `sql.NullTime`, ..., and `sql.Null[T]`) bind as their value, or as a typed NULL when `Valid` is false. Any other `driver.Valuer` binds as what its `Value()` returns.
+- **Named types** over a basic kind, such as `type VendorID int64`, bind as the underlying kind.
+
+```go
+type VendorID int64
+
+var minFare *float64 // nil: no lower bound
+reader, err := spice.SqlWithParams(
+    context.Background(),
+    "SELECT * FROM taxi_trips WHERE VendorID = $1 AND ($2 IS NULL OR fare_amount >= $2) LIMIT 10",
+    VendorID(1),
+    minFare,
+)
+```
+
 **Typed Parameters for Advanced Use Cases:**
 
 For precise control over Arrow types, use typed parameter constructors:

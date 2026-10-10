@@ -256,9 +256,12 @@ func (c *SpiceClient) closeADBC() error {
 // Parameters should use positional placeholders (e.g., $1, $2) in the SQL query
 //
 // Parameters can be:
-// - Simple Go values (int, string, bool, time.Time, time.Duration, etc.) - type will be inferred
-// - Param structs with explicit type annotation using NewTypedParam() or helper functions
-// - Arrow types (arrow.Date32, arrow.Timestamp, etc.)
+//   - Simple Go values (int, string, bool, time.Time, time.Duration, etc.) - type will be inferred
+//   - Pointers, database/sql null types (sql.NullInt64, sql.Null[T], ...) and other driver.Valuers,
+//     and named types over a basic kind (type VendorID int64); a nil pointer or invalid
+//     sql.Null* binds as a NULL typed like its value
+//   - Param structs with explicit type annotation using NewTypedParam() or helper functions
+//   - Arrow types (arrow.Date32, arrow.Timestamp, etc.)
 //
 // Example:
 //
@@ -479,23 +482,25 @@ func (c *SpiceClient) bindParameters(client *ADBCClient, stmt adbc.Statement, pa
 	types := make([]arrow.DataType, len(params))
 
 	for i, param := range params {
+		value, explicitType := param, arrow.DataType(nil)
 		// Check if this is a Param struct with explicit type
 		if p, ok := param.(Param); ok {
-			values[i] = p.Value
-			if p.Type != nil {
-				types[i] = p.Type
-			} else {
-				// Infer type from value
-				dataType, err := inferArrowType(p.Value)
-				if err != nil {
-					return fmt.Errorf("error inferring type for parameter %d: %w", i, err)
-				}
-				types[i] = dataType
-			}
-		} else {
-			// Regular value, infer type
-			values[i] = param
-			dataType, err := inferArrowType(param)
+			value, explicitType = p.Value, p.Type
+		}
+
+		value, nullType, err := normalizeParamValue(value)
+		if err != nil {
+			return fmt.Errorf("error reading parameter %d: %w", i, err)
+		}
+		values[i] = value
+
+		switch {
+		case explicitType != nil:
+			types[i] = explicitType
+		case value == nil && nullType != nil:
+			types[i] = nullType
+		default:
+			dataType, err := inferArrowType(value)
 			if err != nil {
 				return fmt.Errorf("error inferring type for parameter %d: %w", i, err)
 			}
