@@ -223,7 +223,7 @@ func newSessionFixture(t *testing.T, srv *sessionTestServer, opts ...SpiceClient
 	t.Helper()
 
 	spice := NewSpiceClient()
-	opts = append([]SpiceClientModifier{WithFlightAddress(startSessionTestServer(t, srv))}, opts...)
+	opts = append([]SpiceClientModifier{WithFlightAddress(startSessionTestServer(t, srv)), withCloudAuth()}, opts...)
 	if err := spice.Init(opts...); err != nil {
 		t.Fatalf("error initializing SpiceClient: %v", err)
 	}

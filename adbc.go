@@ -163,7 +163,9 @@ func (c *SpiceClient) adbcOptions() (map[string]string, error) {
 	}
 
 	// Add authentication if available
-	if c.appId != "" && c.apiKey != "" {
+	if c.useBearerAuth() {
+		options[flightsql.OptionAuthorizationHeader] = "Bearer " + c.apiKey
+	} else if c.appId != "" && c.apiKey != "" {
 		options[adbc.OptionKeyUsername] = c.appId
 		options[adbc.OptionKeyPassword] = c.apiKey
 	}

@@ -57,8 +57,13 @@ type handshakeFlight struct {
 // caller that started it, and one that hangs must not outlast the deadline of a
 // call that merely arrived behind it.
 func (c *SpiceClient) session(ctx context.Context) (flightSession, error) {
-	if c.appId == "" || c.apiKey == "" {
+	if c.apiKey == "" {
 		return flightSession{}, nil
+	}
+	if c.useBearerAuth() {
+		// The key itself is the credential; there is no session to establish or
+		// renew, so a rejection is final rather than reason to retry.
+		return flightSession{token: "Bearer " + c.apiKey, reused: false}, nil
 	}
 
 	c.sessionMu.Lock()

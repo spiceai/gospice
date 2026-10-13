@@ -62,6 +62,11 @@ type SpiceClient struct {
 	// httpAddressSet records that WithHttpAddress named an endpoint, so Init
 	// leaves it alone instead of deriving one from the Flight address.
 	httpAddressSet bool
+
+	// cloudAuth treats the Flight address as Spice Cloud for authentication,
+	// so a Cloud key uses the Basic handshake. Set only by tests that stand in
+	// for Cloud with a local server.
+	cloudAuth bool
 }
 
 // NewSpiceClient creates a new SpiceClient
@@ -99,16 +104,46 @@ func WithApiKey(apiKey string) SpiceClientModifier {
 		if apiKey == "" {
 			return fmt.Errorf("apiKey is required")
 		}
-		apiKeyParts := strings.Split(apiKey, "|")
-		if len(apiKeyParts) != 2 {
-			return fmt.Errorf("apiKey is invalid")
+		// Spice Cloud keys have the form "<appId>|<secret>" and authenticate
+		// with a Basic handshake. Any other non-empty key is a plain key, as
+		// configured on a Spice OSS runtime, and is sent as a Bearer token.
+		c.appId = ""
+		if appId, secret, ok := strings.Cut(apiKey, "|"); ok && appId != "" && secret != "" && !strings.Contains(secret, "|") {
+			c.appId = appId
 		}
-
-		c.appId = apiKeyParts[0]
 		c.apiKey = apiKey
 
 		return nil
 	}
+}
+
+// useBearerAuth reports whether the API key is sent directly as an
+// "Authorization: Bearer <key>" header rather than exchanged for a session
+// through the Flight Basic handshake. Spice OSS runtimes secured with an API
+// key accept only the Bearer form, so it is used for plain keys (no appId) and
+// for any address that is not Spice Cloud. Cloud keys sent to Spice Cloud keep
+// the Basic handshake.
+func (c *SpiceClient) useBearerAuth() bool {
+	if c.apiKey == "" {
+		return false
+	}
+	return c.appId == "" || !(c.cloudAuth || isCloudAddress(c.flightAddress))
+}
+
+// isCloudAddress reports whether address points at Spice Cloud.
+func isCloudAddress(address string) bool {
+	if address == defaultCloudConfig.FlightUrl {
+		return true
+	}
+	host := address
+	if i := strings.Index(host, "://"); i >= 0 {
+		host = host[i+3:]
+	}
+	if i := strings.IndexAny(host, ":/"); i >= 0 {
+		host = host[:i]
+	}
+	host = strings.ToLower(host)
+	return host == "spiceai.io" || strings.HasSuffix(host, ".spiceai.io")
 }
 
 func WithFlightAddress(address string) SpiceClientModifier {
