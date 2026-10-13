@@ -127,7 +127,7 @@ func (c *SpiceClient) useBearerAuth() bool {
 	if c.apiKey == "" {
 		return false
 	}
-	return c.appId == "" || !(c.cloudAuth || isCloudAddress(c.flightAddress))
+	return c.appId == "" || (!c.cloudAuth && !isCloudAddress(c.flightAddress))
 }
 
 // isCloudAddress reports whether address points at Spice Cloud.
