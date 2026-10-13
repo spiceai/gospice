@@ -204,6 +204,22 @@ if err := spice.Init(
 }
 ```
 
+#### Local runtime secured with an API key
+
+A Spice OSS runtime with [API key auth](https://spiceai.org/docs/api/auth) enabled accepts the key as an `Authorization: Bearer <key>` header. Pass the key with `WithApiKey`; any non-empty key is accepted:
+
+```go
+if err := spice.Init(
+    gospice.WithApiKey(os.Getenv("SPICE_API_KEY")), // e.g. "my-key"
+    gospice.WithFlightAddress("grpc://localhost:50051"),
+    gospice.WithHttpAddress("http://localhost:8090"),
+); err != nil {
+    panic(fmt.Errorf("error initializing SpiceClient: %w", err))
+}
+```
+
+The client sends `Authorization: Bearer <key>` on Flight and `SqlWithParams` (ADBC) calls, and `X-API-Key` on HTTP calls. Only Spice Cloud keys (`<appId>|<secret>`) sent to a Spice Cloud address use the Basic handshake; any other key, or any non-Cloud address, uses the Bearer header.
+
 ## Async Queries
 
 `Query` and `QueryWithParams` submit SQL for **asynchronous** execution and return an `*AsyncQuery` handle. Async queries run in the background on the Spice runtime and are designed for long-running analytical and batch workloads. They require the runtime to be running in distributed/scheduler mode (`spiced --role scheduler` with `runtime.scheduler.state_location` configured).
