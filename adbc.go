@@ -279,7 +279,9 @@ func (c *SpiceClient) SqlWithParams(ctx context.Context, sql string, params ...a
 	}
 
 	rdr, err := c.execADBCWithBackoff(ctx, used, sql, params...)
-	if err != nil && isADBCAuthError(err) {
+	// A Bearer key is sent as-is on every call, so reopening the connection
+	// would only resend the same rejected key: return its failure directly.
+	if err != nil && isADBCAuthError(err) && !c.useBearerAuth() {
 		// The ADBC connection authenticates only once, when it is opened: a
 		// Basic-auth handshake yields a server-side session token that is then
 		// reused for every prepared statement on that connection. That session

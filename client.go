@@ -142,7 +142,7 @@ func isCloudAddress(address string) bool {
 	if i := strings.IndexAny(host, ":/"); i >= 0 {
 		host = host[:i]
 	}
-	host = strings.ToLower(host)
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	return host == "spiceai.io" || strings.HasSuffix(host, ".spiceai.io")
 }
 
