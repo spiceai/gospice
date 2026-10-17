@@ -38,7 +38,8 @@ type SearchRequest struct {
 
 	// Keywords keeps only candidates whose searched column contains every
 	// keyword. The runtime turns each keyword into a case-insensitive
-	// substring match (ILIKE '%keyword%') and ANDs the matches together and
+	// substring match (ILIKE '%keyword%', so % and _ in a keyword act as SQL
+	// wildcards) and ANDs the matches together and
 	// with Where before ranking. A keyword adds no scoring signal and does not
 	// boost matching rows: a row missing any keyword is dropped, however
 	// similar it is.
