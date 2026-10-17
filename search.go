@@ -39,8 +39,8 @@ type SearchRequest struct {
 	// Keywords keeps only candidates whose searched column contains every
 	// keyword. The runtime turns each keyword into a case-insensitive
 	// substring match (ILIKE '%keyword%') and ANDs the matches together and
-	// with Where before ranking. A keyword does not boost matching rows or
-	// change their scores: a row missing any keyword is dropped, however
+	// with Where before ranking. A keyword adds no scoring signal and does not
+	// boost matching rows: a row missing any keyword is dropped, however
 	// similar it is.
 	Keywords []string `json:"keywords,omitempty"`
 }
