@@ -12,8 +12,9 @@ import (
 
 // SearchRequest describes a search against the runtime's /v1/search endpoint.
 //
-// Only Text is required. Supplying Keywords adds a lexical pass, which the
-// runtime combines with the vector scores into a single hybrid ranking.
+// Only Text is required. Keywords narrow the candidates rather than adding to
+// the ranking: a row is ranked only if the searched column contains every
+// keyword.
 type SearchRequest struct {
 	// Text is the text to find similar documents for. Required.
 	Text string `json:"text"`
@@ -35,7 +36,13 @@ type SearchRequest struct {
 	// SearchMatch.Data.
 	AdditionalColumns []string `json:"additional_columns,omitempty"`
 
-	// Keywords drives the lexical pass of a hybrid search.
+	// Keywords keeps only candidates whose searched column contains every
+	// keyword. The runtime turns each keyword into a case-insensitive
+	// substring match (ILIKE '%keyword%', so % and _ in a keyword act as SQL
+	// wildcards) and ANDs the matches together and
+	// with Where before ranking. A keyword adds no scoring signal and does not
+	// boost matching rows: a row missing any keyword is dropped, however
+	// similar it is.
 	Keywords []string `json:"keywords,omitempty"`
 }
 
