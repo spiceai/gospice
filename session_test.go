@@ -575,7 +575,12 @@ func parkOneHandshake(t *testing.T, f *sessionFixture) (release func(), parked <
 func TestAWaiterOnAStalledHandshakeHonoursItsDeadline(t *testing.T) {
 	f := newSessionFixture(t, newSessionTestServer(), WithApiKey(sessionTestAPIKey))
 	release, parked := parkOneHandshake(t, f)
-	defer func() { release(); <-parked }()
+	defer func() {
+		release()
+		if err := <-parked; err != nil {
+			t.Errorf("the leading call failed after its handshake was released: %v", err)
+		}
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
