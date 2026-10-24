@@ -16,7 +16,7 @@ import (
 // For more information on Apache Arrow RecordReader visit https://godoc.org/github.com/apache/arrow/go/arrow/array#RecordReader
 func (c *SpiceClient) Sql(ctx context.Context, sql string) (array.RecordReader, error) {
 	var rdr array.RecordReader
-	err := backoff.Retry(func() error {
+	err := c.withRetries(func() error {
 		err := c.withSession(ctx, func(ctx context.Context) error {
 			var err error
 			rdr, err = queryInternal(ctx, c.flightClient, sql)
@@ -39,7 +39,7 @@ func (c *SpiceClient) Sql(ctx context.Context, sql string) (array.RecordReader, 
 			return backoff.Permanent(err)
 		}
 		return nil
-	}, backoff.WithMaxRetries(c.backoffPolicy, uint64(c.maxRetries)))
+	})
 	if err != nil {
 		return nil, err
 	}

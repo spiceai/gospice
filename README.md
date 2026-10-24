@@ -128,6 +128,7 @@ defer reader.Release()
 - Binary: `[]byte`
 - Timestamp: `time.Time`, sent as a UTC timestamp with nanosecond precision. It must be between 1677-09-21 and 2262-04-11.
 - Duration: `time.Duration`
+- Decimal: `decimal128.Num` (default precision/scale 38, 10), `decimal256.Num` (76, 10)
 - Null values: `nil`
 
 Values in the forms Go code usually holds them also bind directly:
@@ -174,7 +175,7 @@ Available typed parameter constructors:
 - **Boolean**: `BoolParam`
 - **Date/Time**: `Date32Param`, `Date64Param`, `Time32Param`, `Time64Param`, `TimestampParam`, `DurationParam`
 - **Intervals**: `MonthIntervalParam`, `DayTimeIntervalParam`, `MonthDayNanoIntervalParam`
-- **Decimals**: `Decimal128Param`, `Decimal256Param`
+- **Decimals**: `DecimalParam` (from `decimal128.Num` / `decimal256.Num`), `Decimal128Param` / `Decimal256Param` (Arrow little-endian coefficient bytes)
 - **Null**: `NullParam`
 
 Or use the generic constructors:

@@ -281,6 +281,38 @@ func (c *SpiceClient) SetMaxRetries(maxRetries uint) {
 	c.maxRetries = maxRetries
 }
 
+// withRetries runs op, retrying transient failures up to maxRetries times.
+// When maxRetries is 0, retries are disabled: op runs once and its error is
+// returned as-is. grpc-go rejects a retryPolicy with MaxAttempts < 2, so
+// createClient also omits the Flight service-config retryPolicy in that case.
+func (c *SpiceClient) withRetries(op func() error) error {
+	if c.maxRetries == 0 {
+		return op()
+	}
+	return backoff.Retry(op, backoff.WithMaxRetries(c.backoffPolicy, uint64(c.maxRetries)))
+}
+
+// flightServiceConfig is the gRPC default service config for the Flight client.
+// An empty string means no service config: the caller asked for zero retries.
+func (c *SpiceClient) flightServiceConfig() string {
+	if c.maxRetries == 0 {
+		return ""
+	}
+	return fmt.Sprintf(`{
+		"methodConfig": [{
+	        "name": [{"service": "arrow.flight.protocol.FlightService"}],
+	        "waitForReady": true,
+	        "retryPolicy": {
+	            "MaxAttempts": %d,
+	            "InitialBackoff": "0.1s",
+	            "MaxBackoff": "0.225s",
+	            "BackoffMultiplier": 1.5,
+				"RetryableStatusCodes": [ "UNAVAILABLE", "UNKNOWN", "INTERNAL" ]
+	        }
+	    }]
+	}`, c.maxRetries+1)
+}
+
 // Close closes the SpiceClient and cleans up resources
 func (c *SpiceClient) Close() error {
 	var errors []error
@@ -354,21 +386,7 @@ func defaultHttpUrlFor(flightAddress string) (string, bool) {
 }
 
 func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
-	retryPolicy := fmt.Sprintf(`{
-		"methodConfig": [{
-	        "name": [{"service": "arrow.flight.protocol.FlightService"}],
-	        "waitForReady": true,
-	        "retryPolicy": {
-	            "MaxAttempts": %d,
-	            "InitialBackoff": "0.1s",
-	            "MaxBackoff": "0.225s",
-	            "BackoffMultiplier": 1.5,
-				"RetryableStatusCodes": [ "UNAVAILABLE", "UNKNOWN", "INTERNAL" ]
-	        }
-	    }]
-	}`, c.maxRetries+1)
 	grpcDialOpts := []grpc.DialOption{
-		grpc.WithDefaultServiceConfig(retryPolicy),
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(MAX_MESSAGE_SIZE_BYTES),
 			grpc.MaxCallSendMsgSize(MAX_MESSAGE_SIZE_BYTES),
@@ -376,6 +394,9 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 		grpc.WithUnaryInterceptor(FlightHeadersInterceptor(map[string]string{
 			"user-agent": c.userAgent,
 		})),
+	}
+	if cfg := c.flightServiceConfig(); cfg != "" {
+		grpcDialOpts = append(grpcDialOpts, grpc.WithDefaultServiceConfig(cfg))
 	}
 
 	if strings.HasPrefix(address, "grpc://") {
