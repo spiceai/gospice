@@ -2,6 +2,7 @@ package gospice
 
 import (
 	"context"
+	"database/sql"
 	"encoding/binary"
 	"testing"
 
@@ -190,6 +191,43 @@ func TestDecimalParamNewTypedParam(t *testing.T) {
 	if got256 != n256 {
 		t.Fatalf("NewParam(decimal256.Num) value = %s, want %s", got256.ToString(10), n256.ToString(10))
 	}
+}
+
+func TestDecimalParamPreservesScaleOnWrappers(t *testing.T) {
+	n := decimal128.FromI64(42)
+	wantType := &arrow.Decimal128Type{Precision: 38, Scale: 0}
+
+	t.Run("pointer", func(t *testing.T) {
+		rec := bindRecord(t, DecimalParam(&n, 38, 0))
+		if !arrow.TypeEqual(rec.Schema().Field(0).Type, wantType) {
+			t.Fatalf("type = %v, want %v", rec.Schema().Field(0).Type, wantType)
+		}
+		got := rec.Column(0).(*array.Decimal128).Value(0)
+		if got != n {
+			t.Fatalf("value = %s, want %s", got.ToString(0), n.ToString(0))
+		}
+	})
+
+	t.Run("sql.Null valid", func(t *testing.T) {
+		rec := bindRecord(t, DecimalParam(sql.Null[decimal128.Num]{V: n, Valid: true}, 38, 0))
+		if !arrow.TypeEqual(rec.Schema().Field(0).Type, wantType) {
+			t.Fatalf("type = %v, want %v", rec.Schema().Field(0).Type, wantType)
+		}
+		got := rec.Column(0).(*array.Decimal128).Value(0)
+		if got != n {
+			t.Fatalf("value = %s, want %s", got.ToString(0), n.ToString(0))
+		}
+	})
+
+	t.Run("sql.Null invalid", func(t *testing.T) {
+		rec := bindRecord(t, DecimalParam(sql.Null[decimal128.Num]{}, 38, 0))
+		if !arrow.TypeEqual(rec.Schema().Field(0).Type, wantType) {
+			t.Fatalf("type = %v, want %v", rec.Schema().Field(0).Type, wantType)
+		}
+		if !rec.Column(0).IsNull(0) {
+			t.Fatal("expected a NULL decimal(38, 0)")
+		}
+	})
 }
 
 func TestInferArrowTypeDecimalNum(t *testing.T) {

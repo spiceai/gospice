@@ -188,17 +188,70 @@ func Decimal256Param(value [32]byte, precision, scale int32) Param {
 // have an Arrow Num (for example from decimal128.FromString) so you do not
 // have to assemble the little-endian coefficient yourself.
 //
-// A decimal128.Num or decimal256.Num passed to SqlWithParams without a helper
-// is inferred as decimal(38, 10) or decimal256(76, 10) respectively.
+// Pointers and sql.Null[T] wrappers around those Num types keep the requested
+// precision and scale. A Num passed to SqlWithParams without a helper is
+// inferred as decimal(38, 10) or decimal256(76, 10).
 func DecimalParam(value any, precision, scale int32) Param {
-	switch value.(type) {
-	case decimal128.Num:
+	switch decimalNumWidth(value) {
+	case 128:
 		return NewTypedParam(value, &arrow.Decimal128Type{Precision: precision, Scale: scale})
-	case decimal256.Num:
+	case 256:
 		return NewTypedParam(value, &arrow.Decimal256Type{Precision: precision, Scale: scale})
 	default:
 		return NewParam(value)
 	}
+}
+
+// decimalNumWidth reports whether val is a decimal128.Num (128), a
+// decimal256.Num (256), or a pointer / sql.Null[T] wrapping one. 0 means it
+// is not a decimal Num, so DecimalParam cannot attach precision and scale.
+func decimalNumWidth(val any) int {
+	for i := 0; i <= maxParamIndirection; i++ {
+		if val == nil {
+			return 0
+		}
+		switch val.(type) {
+		case decimal128.Num:
+			return 128
+		case decimal256.Num:
+			return 256
+		}
+
+		rv := reflect.ValueOf(val)
+		if !rv.IsValid() {
+			return 0
+		}
+		rt := rv.Type()
+
+		if rt.Kind() == reflect.Pointer {
+			elem := rt.Elem()
+			for elem.Kind() == reflect.Pointer {
+				elem = elem.Elem()
+			}
+			switch elem {
+			case reflect.TypeFor[decimal128.Num]():
+				return 128
+			case reflect.TypeFor[decimal256.Num]():
+				return 256
+			}
+			if rv.IsNil() {
+				return 0
+			}
+			val = rv.Elem().Interface()
+			continue
+		}
+
+		if rt.Kind() == reflect.Struct && rt.PkgPath() == "database/sql" && strings.HasPrefix(rt.Name(), "Null[") {
+			field, ok := rt.FieldByName("V")
+			if !ok {
+				return 0
+			}
+			val = reflect.Zero(field.Type).Interface()
+			continue
+		}
+		return 0
+	}
+	return 0
 }
 
 // FixedSizeBinaryParam creates a FixedSizeBinary parameter with specified byte width

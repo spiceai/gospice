@@ -2,12 +2,14 @@ package gospice
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/cenkalti/backoff/v4"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -36,6 +38,22 @@ func TestFlightServiceConfigOmitsRetryPolicyWhenRetriesDisabled(t *testing.T) {
 	}
 	if !strings.Contains(cfg, `"retryPolicy"`) {
 		t.Fatalf("flightServiceConfig() = %s, want a retryPolicy when retries are enabled", cfg)
+	}
+}
+
+func TestWithRetriesUnwrapsPermanentWhenDisabled(t *testing.T) {
+	c := NewSpiceClient()
+	c.SetMaxRetries(0)
+	inner := errors.New("not retryable")
+	err := c.withRetries(func() error {
+		return backoff.Permanent(inner)
+	})
+	if !errors.Is(err, inner) {
+		t.Fatalf("withRetries() = %v, want unwrapped %v", err, inner)
+	}
+	var permanent *backoff.PermanentError
+	if errors.As(err, &permanent) {
+		t.Fatalf("withRetries leaked *backoff.PermanentError: %v", err)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -287,7 +288,15 @@ func (c *SpiceClient) SetMaxRetries(maxRetries uint) {
 // createClient also omits the Flight service-config retryPolicy in that case.
 func (c *SpiceClient) withRetries(op func() error) error {
 	if c.maxRetries == 0 {
-		return op()
+		err := op()
+		// backoff.Retry unwraps *PermanentError so callers see the inner error.
+		// The single-attempt path must do the same: Sql and execADBCWithBackoff
+		// mark non-retryable failures with backoff.Permanent.
+		var permanent *backoff.PermanentError
+		if errors.As(err, &permanent) {
+			return permanent.Err
+		}
+		return err
 	}
 	return backoff.Retry(op, backoff.WithMaxRetries(c.backoffPolicy, uint64(c.maxRetries)))
 }
