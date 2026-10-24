@@ -225,7 +225,11 @@ func decimalNumWidth(val any) int {
 
 		if rt.Kind() == reflect.Pointer {
 			elem := rt.Elem()
-			for elem.Kind() == reflect.Pointer {
+			for n := 0; elem.Kind() == reflect.Pointer; n++ {
+				// type P *P has Elem() == P; without a bound this never ends.
+				if n >= maxParamIndirection {
+					return 0
+				}
 				elem = elem.Elem()
 			}
 			switch elem {

@@ -228,6 +228,27 @@ func TestDecimalParamPreservesScaleOnWrappers(t *testing.T) {
 			t.Fatal("expected a NULL decimal(38, 0)")
 		}
 	})
+
+	t.Run("pointer to pointer", func(t *testing.T) {
+		p := &n
+		rec := bindRecord(t, DecimalParam(&p, 38, 0))
+		if !arrow.TypeEqual(rec.Schema().Field(0).Type, wantType) {
+			t.Fatalf("type = %v, want %v", rec.Schema().Field(0).Type, wantType)
+		}
+		got := rec.Column(0).(*array.Decimal128).Value(0)
+		if got != n {
+			t.Fatalf("value = %s, want %s", got.ToString(0), n.ToString(0))
+		}
+	})
+}
+
+func TestDecimalNumWidthBoundsRecursivePointer(t *testing.T) {
+	type P *P
+	if got := decimalNumWidth(P(nil)); got != 0 {
+		t.Fatalf("decimalNumWidth(recursive nil pointer) = %d, want 0", got)
+	}
+	// Must return, not hang: type P *P makes Elem() the same pointer type.
+	_ = DecimalParam(P(nil), 38, 0)
 }
 
 func TestInferArrowTypeDecimalNum(t *testing.T) {
