@@ -515,7 +515,7 @@ import "github.com/spiceai/gospice/v9"
 **Breaking changes in v9:**
 
 - `Query()` and `QueryWithParams()` are now **asynchronous** and return an `*AsyncQuery` handle instead of an `array.RecordReader`. Use the handle's `Wait()` / `Results()` methods (see [Async Queries](#async-queries)), or switch to the synchronous `Sql()` / `SqlWithParams()` methods.
-- Minimum Go version is now **1.25** (was 1.24).
+- Minimum Go version is now **1.25** (was 1.24). v9.1.0 and later require Go **1.26**.
 - Upgraded to Apache Arrow v18.6.0 and ADBC v1.11.0, matching the Spice.ai runtime's DataFusion 54.
 
 See [UPGRADE_V8_TO_V9.md](UPGRADE_V8_TO_V9.md) for the detailed migration guide.
