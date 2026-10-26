@@ -2,6 +2,7 @@ package gospice
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
@@ -263,6 +264,7 @@ func (c *SpiceClient) closeADBC() error {
 //     and named types over a basic kind (type VendorID int64); a nil pointer or invalid
 //     sql.Null* binds as a NULL typed like its value
 //   - Param structs with explicit type annotation using NewTypedParam() or helper functions
+//   - Arrow decimal128.Num / decimal256.Num (default precision/scale 38,10 and 76,10)
 //   - Arrow types (arrow.Date32, arrow.Timestamp, etc.)
 //
 // Example:
@@ -333,7 +335,7 @@ func (c *SpiceClient) acquireADBC() (*ADBCClient, error) {
 // can re-establish the connection before retrying.
 func (c *SpiceClient) execADBCWithBackoff(ctx context.Context, client *ADBCClient, sql string, params ...any) (array.RecordReader, error) {
 	var rdr array.RecordReader
-	err := backoff.Retry(func() error {
+	err := c.withRetries(func() error {
 		var err error
 		rdr, err = c.queryADBCWithParams(ctx, client, sql, params...)
 		if err != nil {
@@ -353,7 +355,7 @@ func (c *SpiceClient) execADBCWithBackoff(ctx context.Context, client *ADBCClien
 			return backoff.Permanent(err)
 		}
 		return nil
-	}, backoff.WithMaxRetries(c.backoffPolicy, uint64(c.maxRetries)))
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -623,12 +625,15 @@ func inferArrowType(val any) (arrow.DataType, error) {
 	case arrow.MonthDayNanoInterval:
 		return arrow.FixedWidthTypes.MonthDayNanoInterval, nil
 
-	// Fixed-size types
+	// Decimal types. [16]byte / [32]byte are the Arrow-native little-endian
+	// two's-complement coefficient; prefer decimal128.Num / decimal256.Num.
+	case decimal128.Num:
+		return &arrow.Decimal128Type{Precision: 38, Scale: 10}, nil
+	case decimal256.Num:
+		return &arrow.Decimal256Type{Precision: 76, Scale: 10}, nil
 	case [16]byte:
-		// Decimal128 - default precision/scale (38, 10)
 		return &arrow.Decimal128Type{Precision: 38, Scale: 10}, nil
 	case [32]byte:
-		// Decimal256 - default precision/scale (76, 10)
 		return &arrow.Decimal256Type{Precision: 76, Scale: 10}, nil
 
 	case nil:
@@ -828,35 +833,23 @@ func appendValueToBuilder(builder array.Builder, val any) error {
 			return fmt.Errorf("cannot convert %T to arrow.MonthDayNanoInterval", val)
 		}
 
-	// Decimal builders
+	// Decimal builders. Byte arrays use Arrow-native little-endian layout.
 	case *array.Decimal128Builder:
-		if v, ok := val.([16]byte); ok {
-			// Convert byte array to decimal128.Num
-			// Interpret as big-endian signed integer
-			hi := int64(uint64(v[0])<<56 | uint64(v[1])<<48 | uint64(v[2])<<40 | uint64(v[3])<<32 |
-				uint64(v[4])<<24 | uint64(v[5])<<16 | uint64(v[6])<<8 | uint64(v[7]))
-			lo := uint64(v[8])<<56 | uint64(v[9])<<48 | uint64(v[10])<<40 | uint64(v[11])<<32 |
-				uint64(v[12])<<24 | uint64(v[13])<<16 | uint64(v[14])<<8 | uint64(v[15])
-			dec := decimal128.New(hi, lo)
-			b.Append(dec)
-		} else {
+		switch v := val.(type) {
+		case decimal128.Num:
+			b.Append(v)
+		case [16]byte:
+			b.Append(decimal128FromLE(v))
+		default:
 			return fmt.Errorf("cannot convert %T to decimal128", val)
 		}
 	case *array.Decimal256Builder:
-		if v, ok := val.([32]byte); ok {
-			// Convert byte array to decimal256.Num
-			// Extract 4 64-bit little-endian values
-			w0 := uint64(v[0]) | uint64(v[1])<<8 | uint64(v[2])<<16 | uint64(v[3])<<24 |
-				uint64(v[4])<<32 | uint64(v[5])<<40 | uint64(v[6])<<48 | uint64(v[7])<<56
-			w1 := uint64(v[8]) | uint64(v[9])<<8 | uint64(v[10])<<16 | uint64(v[11])<<24 |
-				uint64(v[12])<<32 | uint64(v[13])<<40 | uint64(v[14])<<48 | uint64(v[15])<<56
-			w2 := uint64(v[16]) | uint64(v[17])<<8 | uint64(v[18])<<16 | uint64(v[19])<<24 |
-				uint64(v[20])<<32 | uint64(v[21])<<40 | uint64(v[22])<<48 | uint64(v[23])<<56
-			w3 := uint64(v[24]) | uint64(v[25])<<8 | uint64(v[26])<<16 | uint64(v[27])<<24 |
-				uint64(v[28])<<32 | uint64(v[29])<<40 | uint64(v[30])<<48 | uint64(v[31])<<56
-			dec := decimal256.New(w0, w1, w2, w3)
-			b.Append(dec)
-		} else {
+		switch v := val.(type) {
+		case decimal256.Num:
+			b.Append(v)
+		case [32]byte:
+			b.Append(decimal256FromLE(v))
+		default:
 			return fmt.Errorf("cannot convert %T to decimal256", val)
 		}
 
@@ -865,4 +858,25 @@ func appendValueToBuilder(builder array.Builder, val any) error {
 	}
 
 	return nil
+}
+
+// decimal128FromLE decodes a 128-bit coefficient from Arrow-native little-endian
+// two's complement: bytes [0:8] are the least-significant 64 bits.
+func decimal128FromLE(v [16]byte) decimal128.Num {
+	return decimal128.New(
+		int64(binary.LittleEndian.Uint64(v[8:16])),
+		binary.LittleEndian.Uint64(v[0:8]),
+	)
+}
+
+// decimal256FromLE decodes a 256-bit coefficient from Arrow-native little-endian
+// two's complement: four little-endian 64-bit words, least-significant first.
+// decimal256.New takes the most-significant word first.
+func decimal256FromLE(v [32]byte) decimal256.Num {
+	return decimal256.New(
+		binary.LittleEndian.Uint64(v[24:32]),
+		binary.LittleEndian.Uint64(v[16:24]),
+		binary.LittleEndian.Uint64(v[8:16]),
+		binary.LittleEndian.Uint64(v[0:8]),
+	)
 }

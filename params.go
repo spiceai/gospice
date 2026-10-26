@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/decimal128"
+	"github.com/apache/arrow-go/v18/arrow/decimal256"
 )
 
 // Param represents a query parameter with an optional explicit Arrow type.
@@ -154,14 +156,106 @@ func MonthDayNanoIntervalParam(value arrow.MonthDayNanoInterval) Param {
 	return NewTypedParam(value, arrow.FixedWidthTypes.MonthDayNanoInterval)
 }
 
-// Decimal128Param creates a Decimal128 parameter with specified precision and scale
+// Decimal128Param creates a Decimal128 parameter with specified precision and scale.
+//
+// value is the unscaled integer coefficient in Apache Arrow's native layout:
+// little-endian two's complement, 16 bytes. Bytes [0:8] are the least-significant
+// 64 bits (decimal128.Num.LowBits) and bytes [8:16] are the most-significant 64
+// bits (HighBits), each stored little-endian.
+//
+// This is a breaking change from v9.0.0, which decoded the same [16]byte as
+// big-endian. Callers that assembled bytes to match the old decoder must switch
+// to this layout, or pass a decimal128.Num via DecimalParam / NewTypedParam.
 func Decimal128Param(value [16]byte, precision, scale int32) Param {
 	return NewTypedParam(value, &arrow.Decimal128Type{Precision: precision, Scale: scale})
 }
 
-// Decimal256Param creates a Decimal256 parameter with specified precision and scale
+// Decimal256Param creates a Decimal256 parameter with specified precision and scale.
+//
+// value is the unscaled integer coefficient in Apache Arrow's native layout:
+// little-endian two's complement, 32 bytes. The value is four little-endian
+// 64-bit words with the least-significant word first, matching
+// decimal256.Num.Array() (index 0 is the lowest 64 bits).
+//
+// This is a breaking change from v9.0.0, which mixed word order and could not
+// round-trip any natural encoding. Prefer DecimalParam with a decimal256.Num.
 func Decimal256Param(value [32]byte, precision, scale int32) Param {
 	return NewTypedParam(value, &arrow.Decimal256Type{Precision: precision, Scale: scale})
+}
+
+// DecimalParam creates a decimal parameter from a decimal128.Num or
+// decimal256.Num with explicit precision and scale. Use this when you already
+// have an Arrow Num (for example from decimal128.FromString) so you do not
+// have to assemble the little-endian coefficient yourself.
+//
+// Pointers and sql.Null[T] wrappers around those Num types keep the requested
+// precision and scale. A Num passed to SqlWithParams without a helper is
+// inferred as decimal(38, 10) or decimal256(76, 10).
+func DecimalParam(value any, precision, scale int32) Param {
+	switch decimalNumWidth(value) {
+	case 128:
+		return NewTypedParam(value, &arrow.Decimal128Type{Precision: precision, Scale: scale})
+	case 256:
+		return NewTypedParam(value, &arrow.Decimal256Type{Precision: precision, Scale: scale})
+	default:
+		return NewParam(value)
+	}
+}
+
+// decimalNumWidth reports whether val is a decimal128.Num (128), a
+// decimal256.Num (256), or a pointer / sql.Null[T] wrapping one. 0 means it
+// is not a decimal Num, so DecimalParam cannot attach precision and scale.
+func decimalNumWidth(val any) int {
+	for i := 0; i <= maxParamIndirection; i++ {
+		if val == nil {
+			return 0
+		}
+		switch val.(type) {
+		case decimal128.Num:
+			return 128
+		case decimal256.Num:
+			return 256
+		}
+
+		rv := reflect.ValueOf(val)
+		if !rv.IsValid() {
+			return 0
+		}
+		rt := rv.Type()
+
+		if rt.Kind() == reflect.Pointer {
+			elem := rt.Elem()
+			for n := 0; elem.Kind() == reflect.Pointer; n++ {
+				// type P *P has Elem() == P; without a bound this never ends.
+				if n >= maxParamIndirection {
+					return 0
+				}
+				elem = elem.Elem()
+			}
+			switch elem {
+			case reflect.TypeFor[decimal128.Num]():
+				return 128
+			case reflect.TypeFor[decimal256.Num]():
+				return 256
+			}
+			if rv.IsNil() {
+				return 0
+			}
+			val = rv.Elem().Interface()
+			continue
+		}
+
+		if rt.Kind() == reflect.Struct && rt.PkgPath() == "database/sql" && strings.HasPrefix(rt.Name(), "Null[") {
+			field, ok := rt.FieldByName("V")
+			if !ok {
+				return 0
+			}
+			val = reflect.Zero(field.Type).Interface()
+			continue
+		}
+		return 0
+	}
+	return 0
 }
 
 // FixedSizeBinaryParam creates a FixedSizeBinary parameter with specified byte width

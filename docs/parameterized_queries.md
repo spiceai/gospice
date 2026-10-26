@@ -89,10 +89,16 @@ reader, err := client.SqlWithParams(ctx,
 
 ### Decimal Types
 
-| Arrow Type | Helper Function                   | Example                                  |
-| ---------- | --------------------------------- | ---------------------------------------- |
-| Decimal128 | `Decimal128Param(v, prec, scale)` | `Decimal128Param([16]byte{...}, 38, 10)` |
-| Decimal256 | `Decimal256Param(v, prec, scale)` | `Decimal256Param([32]byte{...}, 76, 10)` |
+| Go Type            | Arrow Type | Helper Function                   | Auto-Inferred |
+| ------------------ | ---------- | --------------------------------- | ------------- |
+| `decimal128.Num`   | Decimal128 | `DecimalParam(n, prec, scale)`    | ✅ (38, 10)   |
+| `decimal256.Num`   | Decimal256 | `DecimalParam(n, prec, scale)`    | ✅ (76, 10)   |
+| `[16]byte`         | Decimal128 | `Decimal128Param(v, prec, scale)` | ✅ (38, 10)   |
+| `[32]byte`         | Decimal256 | `Decimal256Param(v, prec, scale)` | ✅ (76, 10)   |
+
+`Decimal128Param` / `Decimal256Param` take the unscaled integer coefficient in **Apache Arrow's native little-endian two's complement** layout: the least-significant 64-bit word first, each word little-endian. That is the same order as `decimal128.Num` (`LowBits` then `HighBits`) and `decimal256.Num.Array()` (index 0 is the lowest 64 bits).
+
+**Breaking change:** v9.0.0 decoded `Decimal128Param` as big-endian and `Decimal256Param` with reversed word order, so neither Arrow-native nor big-endian bytes round-tripped for 256-bit values. Callers that assembled bytes to match the old decoder must switch to this layout, or pass a `decimal128.Num` / `decimal256.Num` via `DecimalParam` or `NewTypedParam`.
 
 ### Special Types
 
@@ -266,13 +272,23 @@ reader, err := client.SqlWithParams(ctx,
 ### Example 6: Decimal Precision
 
 ```go
-// Working with high-precision decimal numbers
-var decimalBytes [16]byte
-// ... populate decimal bytes ...
-
+// Prefer an Arrow Num so you do not assemble the coefficient yourself
+amount, err := decimal128.FromString("1.0000000001", 38, 10)
+if err != nil {
+    log.Fatal(err)
+}
 reader, err := client.SqlWithParams(ctx,
     "SELECT * FROM financial WHERE amount = $1",
-    gospice.Decimal128Param(decimalBytes, 38, 10), // 38 precision, 10 scale
+    gospice.DecimalParam(amount, 38, 10),
+)
+
+// [16]byte / [32]byte use Arrow little-endian two's complement
+var decimalBytes [16]byte
+binary.LittleEndian.PutUint64(decimalBytes[0:8], amount.LowBits())
+binary.LittleEndian.PutUint64(decimalBytes[8:16], uint64(amount.HighBits()))
+reader, err = client.SqlWithParams(ctx,
+    "SELECT * FROM financial WHERE amount = $1",
+    gospice.Decimal128Param(decimalBytes, 38, 10),
 )
 ```
 
@@ -315,6 +331,7 @@ When types are not explicitly specified:
 9. **`database/sql` null types**: `sql.NullInt64`, `sql.NullInt32`, `sql.NullInt16`, `sql.NullByte`, `sql.NullFloat64`, `sql.NullBool`, `sql.NullString`, `sql.NullTime` and `sql.Null[T]` bind as their value, or as a typed NULL when `Valid` is false
 10. **Other `driver.Valuer`s**: bind as what `Value()` returns
 11. **Named types** over a basic kind (`type VendorID int64`, `type Label string`, `type Payload []byte`) bind as that kind
+12. **Decimals**: `decimal128.Num` → `Decimal128` (38, 10), `decimal256.Num` → `Decimal256` (76, 10), `[16]byte` → `Decimal128` (38, 10), `[32]byte` → `Decimal256` (76, 10). Byte arrays are Arrow little-endian two's complement. Use `DecimalParam` or `NewTypedParam` for a different precision or scale.
 
 A type with an explicit rule of its own keeps it: `time.Duration` is a named `int64` but still binds as a `Duration`, and `arrow.Date32` as a `Date32`.
 
