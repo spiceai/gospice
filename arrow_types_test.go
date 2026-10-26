@@ -6,6 +6,8 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/decimal128"
+	"github.com/apache/arrow-go/v18/arrow/decimal256"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
@@ -46,6 +48,10 @@ func TestInferArrowType(t *testing.T) {
 		{"duration", arrow.Duration(1000000), arrow.FixedWidthTypes.Duration_us},             // Duration in microseconds
 		{"time.Time", time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), arrow.FixedWidthTypes.Timestamp_ns},
 		{"time.Duration", 30 * time.Minute, arrow.FixedWidthTypes.Duration_ns},
+
+		// Decimal types
+		{"decimal128.Num", decimal128.FromI64(1), &arrow.Decimal128Type{Precision: 38, Scale: 10}},
+		{"decimal256.Num", decimal256.FromI64(1), &arrow.Decimal256Type{Precision: 76, Scale: 10}},
 
 		// Null type
 		{"nil", nil, arrow.Null},

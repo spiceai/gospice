@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/decimal128"
+	"github.com/apache/arrow-go/v18/arrow/decimal256"
 )
 
 func TestParamType(t *testing.T) {
@@ -181,6 +183,18 @@ func TestExtendedArrowTypes(t *testing.T) {
 		{
 			name:          "Decimal256 bytes",
 			value:         [32]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+			expectedType:  &arrow.Decimal256Type{Precision: 76, Scale: 10},
+			shouldSucceed: true,
+		},
+		{
+			name:          "decimal128.Num",
+			value:         decimal128.FromI64(1),
+			expectedType:  &arrow.Decimal128Type{Precision: 38, Scale: 10},
+			shouldSucceed: true,
+		},
+		{
+			name:          "decimal256.Num",
+			value:         decimal256.FromI64(1),
 			expectedType:  &arrow.Decimal256Type{Precision: 76, Scale: 10},
 			shouldSucceed: true,
 		},
