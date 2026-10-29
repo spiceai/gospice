@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -171,6 +172,9 @@ func TestCustomFlightAddressDerivesHttpUrlOnTheSameHost(t *testing.T) {
 		{"dns://resolver.example.invalid:53/runtime.example.invalid:443", "https://runtime.example.invalid:8090"},
 		{"dns:///flight.spiceai.io:443", defaultCloudConfig.HttpUrl},
 		{"passthrough:///runtime.example.invalid:50051", "https://runtime.example.invalid:8090"},
+		{"dns:runtime.example.invalid:443", "https://runtime.example.invalid:8090"},
+		{"dns:flight.spiceai.io:443", defaultCloudConfig.HttpUrl},
+		{"passthrough:runtime.example.invalid:50051", "https://runtime.example.invalid:8090"},
 		// No readable host: no HTTP endpoint at all rather than a guessed one.
 		{"grpc://", ""},
 		{"dns://resolver.example.invalid:53", ""},
@@ -250,5 +254,42 @@ func TestSpiceHttpUrlEnvOverrideIsKeptForCustomFlightAddress(t *testing.T) {
 	}
 	if want := "https://runtime.example.invalid:8443"; spice.baseHttpUrl != want {
 		t.Fatalf("baseHttpUrl = %q, want the SPICE_HTTP_URL endpoint %q", spice.baseHttpUrl, want)
+	}
+}
+
+// A Flight endpoint moved by SPICE_FLIGHT_URL or SPICE_LOCAL_FLIGHT_URL alone
+// is a custom address: it must not inherit the built-in HTTP default (Spice
+// Cloud, or this machine) and carry the API key there.
+func TestEnvMovedFlightUrlDoesNotInheritTheBuiltInHttpDefault(t *testing.T) {
+	savedLocal, savedCloud := defaultLocalConfig, defaultCloudConfig
+	defer func() { defaultLocalConfig, defaultCloudConfig = savedLocal, savedCloud }()
+
+	for _, tt := range []struct {
+		name, flightEnv, httpEnv, httpValue, want string
+	}{
+		{"SPICE_FLIGHT_URL only", "SPICE_FLIGHT_URL", "", "", "http://runtime.example.invalid:8090"},
+		{"SPICE_LOCAL_FLIGHT_URL only", "SPICE_LOCAL_FLIGHT_URL", "", "", "http://runtime.example.invalid:8090"},
+		{"SPICE_LOCAL_FLIGHT_URL with SPICE_LOCAL_HTTP_URL", "SPICE_LOCAL_FLIGHT_URL", "SPICE_LOCAL_HTTP_URL", "http://runtime.example.invalid:9000", "http://runtime.example.invalid:9000"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, k := range []string{"SPICE_FLIGHT_URL", "SPICE_HTTP_URL", "SPICE_LOCAL_FLIGHT_URL", "SPICE_LOCAL_HTTP_URL"} {
+				t.Setenv(k, "")
+				_ = os.Unsetenv(k)
+			}
+			t.Setenv(tt.flightEnv, "grpc://runtime.example.invalid:50051")
+			if tt.httpEnv != "" {
+				t.Setenv(tt.httpEnv, tt.httpValue)
+			}
+			defaultCloudConfig, defaultLocalConfig = LoadConfig(), LoadLocalConfig()
+
+			spice := NewSpiceClientWithAddress("grpc://runtime.example.invalid:50051")
+			defer func() { _ = spice.Close() }()
+			if err := spice.Init(WithApiKey("local-runtime-key")); err != nil {
+				t.Fatalf("error initializing SpiceClient: %v", err)
+			}
+			if spice.baseHttpUrl != tt.want {
+				t.Fatalf("baseHttpUrl = %q, want %q", spice.baseHttpUrl, tt.want)
+			}
+		})
 	}
 }

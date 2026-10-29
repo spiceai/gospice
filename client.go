@@ -410,6 +410,14 @@ const defaultRuntimeHttpPort = "8090"
 // Anything else reports false.
 func flightTargetHost(address string) (host string, tls bool, ok bool) {
 	tls = true
+	// Opaque resolver targets (dns:host:port, passthrough:host:port) name the
+	// application endpoint directly.
+	if i := strings.Index(address, ":"); i >= 0 && !strings.Contains(address, "://") {
+		switch strings.ToLower(address[:i]) {
+		case "dns", "passthrough":
+			address = strings.TrimPrefix(address[i+1:], "/")
+		}
+	}
 	authority := address
 	if i := strings.Index(address, "://"); i >= 0 {
 		scheme := strings.ToLower(address[:i])
@@ -469,15 +477,23 @@ func isCloudHost(host string) bool {
 //
 // Only the two default endpoints have a counterpart this function names; see
 // httpUrlFor for every other address.
+//
+// A Flight endpoint moved by SPICE_FLIGHT_URL or SPICE_LOCAL_FLIGHT_URL pairs
+// with its HTTP default only when the matching HTTP variable was set too;
+// otherwise the built-in HTTP default would name a runtime the caller moved
+// away from (Spice Cloud, or this machine), so it is treated as custom.
 func defaultHttpUrlFor(flightAddress string) (string, bool) {
 	switch flightAddress {
 	case defaultCloudConfig.FlightUrl:
-		return defaultCloudConfig.HttpUrl, true
+		if defaultCloudConfig.pairingConfigured() {
+			return defaultCloudConfig.HttpUrl, true
+		}
 	case defaultLocalConfig.FlightUrl:
-		return defaultLocalConfig.HttpUrl, true
-	default:
-		return "", false
+		if defaultLocalConfig.pairingConfigured() {
+			return defaultLocalConfig.HttpUrl, true
+		}
 	}
+	return "", false
 }
 
 func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
