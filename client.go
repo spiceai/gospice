@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -76,15 +77,9 @@ func NewSpiceClient() *SpiceClient {
 }
 
 func NewSpiceClientWithAddress(flightAddress string) *SpiceClient {
-	// An address with no known HTTP counterpart keeps the Cloud endpoint this
-	// constructor has always defaulted to; WithHttpAddress names the runtime's own.
-	baseHttpUrl := defaultCloudConfig.HttpUrl
-	if paired, ok := defaultHttpUrlFor(flightAddress); ok {
-		baseHttpUrl = paired
-	}
 	spiceClient := &SpiceClient{
 		flightAddress: flightAddress,
-		baseHttpUrl:   baseHttpUrl,
+		baseHttpUrl:   httpUrlFor(flightAddress),
 		httpClient: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 10,
@@ -214,16 +209,10 @@ func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 
 	// Options may have moved the Flight endpoint (WithFlightAddress,
 	// WithSpiceCloudAddress). Unless the caller named an HTTP endpoint of their
-	// own, follow it, so both halves of the client address the same runtime.
-	// Resolved from the Flight address the options settled on, so an address
-	// with no known counterpart falls back to the Cloud endpoint this client has
-	// always defaulted to rather than keeping one derived for a different runtime.
+	// own, follow it, so both halves of the client address the same runtime and
+	// the API key is only ever sent to a host the caller configured.
 	if !c.httpAddressSet {
-		if paired, ok := defaultHttpUrlFor(c.flightAddress); ok {
-			c.baseHttpUrl = paired
-		} else {
-			c.baseHttpUrl = defaultCloudConfig.HttpUrl
-		}
+		c.baseHttpUrl = httpUrlFor(c.flightAddress)
 	}
 
 	systemCertPool, err := x509.SystemCertPool()
@@ -379,10 +368,61 @@ func FlightHeadersInterceptor(headers map[string]string) grpc.UnaryClientInterce
 // HTTP endpoint means health checks, dataset refreshes, search and NSQL all
 // report on a runtime the caller never named.
 //
-// Only the two default endpoints have a counterpart this client can name. Any
-// other Flight address — a self-hosted runtime, one behind a proxy — may serve
-// its HTTP API anywhere, so it reports false and the caller keeps the HTTP
-// endpoint it already had rather than being pointed at this machine.
+// Only the two default endpoints have a counterpart this function names; see
+// httpUrlFor for every other address.
+// httpUrlFor returns the HTTP endpoint a client on flightAddress uses when no
+// WithHttpAddress was given.
+//
+// The two default Flight endpoints keep their known pairing, and any other
+// Spice Cloud Flight host uses the Spice Cloud HTTP endpoint. Every other
+// Flight address — a self-hosted runtime on a custom host or port — is paired
+// with the runtime's default HTTP port (8090) on the same host, over HTTPS
+// unless the Flight address is plaintext (grpc://). A client on a custom Flight
+// address therefore never sends its HTTP calls, or the API key it was
+// configured with, to Spice Cloud or to any host the caller did not name.
+//
+// An address whose host cannot be read yields "", so HTTP calls fail rather
+// than reach a host the caller did not configure; WithHttpAddress fixes it.
+func httpUrlFor(flightAddress string) string {
+	if paired, ok := defaultHttpUrlFor(flightAddress); ok {
+		return paired
+	}
+	if isCloudAddress(flightAddress) {
+		return defaultCloudConfig.HttpUrl
+	}
+	return derivedHttpUrlFor(flightAddress)
+}
+
+// defaultRuntimeHttpPort is the port the Spice runtime serves its HTTP API on
+// by default.
+const defaultRuntimeHttpPort = "8090"
+
+// derivedHttpUrlFor builds "<scheme>://<flight host>:8090" from a Flight
+// address, or "" when the address names no host.
+func derivedHttpUrlFor(flightAddress string) string {
+	scheme := "https"
+	rest := flightAddress
+	if i := strings.Index(rest, "://"); i >= 0 {
+		if strings.EqualFold(rest[:i], "grpc") || strings.EqualFold(rest[:i], "grpc+tcp") {
+			scheme = "http"
+		}
+		rest = rest[i+3:]
+	}
+	if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+		rest = rest[:i]
+	}
+	host := rest
+	if h, _, err := net.SplitHostPort(rest); err == nil {
+		host = h
+	} else {
+		host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	}
+	if host == "" || strings.ContainsAny(host, "@ ") {
+		return ""
+	}
+	return scheme + "://" + net.JoinHostPort(host, defaultRuntimeHttpPort)
+}
+
 func defaultHttpUrlFor(flightAddress string) (string, bool) {
 	switch flightAddress {
 	case defaultCloudConfig.FlightUrl:

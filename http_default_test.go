@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -133,5 +134,91 @@ func TestCustomFlightAddressDoesNotDeriveTheLocalHttpUrl(t *testing.T) {
 				t.Fatalf("a custom Flight address derived the local HTTP URL %q", spice.baseHttpUrl)
 			}
 		})
+	}
+}
+
+// A custom Flight address pairs with the runtime's default HTTP port on the
+// same host, never with Spice Cloud: the client's HTTP calls, and the API key
+// they carry, only reach a host the caller configured.
+func TestCustomFlightAddressDerivesHttpUrlOnTheSameHost(t *testing.T) {
+	savedLocal, savedCloud := defaultLocalConfig, defaultCloudConfig
+	defer func() { defaultLocalConfig, defaultCloudConfig = savedLocal, savedCloud }()
+	defaultLocalConfig.FlightUrl = "grpc://127.0.0.1:50051"
+	defaultLocalConfig.HttpUrl = "http://127.0.0.1:8090"
+	defaultCloudConfig.FlightUrl = "flight.spiceai.io:443"
+	defaultCloudConfig.HttpUrl = "https://data.example.invalid"
+
+	for _, tt := range []struct {
+		flight string
+		want   string
+	}{
+		{"grpc://127.0.0.1:15151", "http://127.0.0.1:8090"},
+		{"grpc://runtime.example.invalid:50051", "http://runtime.example.invalid:8090"},
+		{"grpc+tcp://runtime.example.invalid:50051", "http://runtime.example.invalid:8090"},
+		{"grpc+tls://runtime.example.invalid:50051", "https://runtime.example.invalid:8090"},
+		{"runtime.example.invalid:443", "https://runtime.example.invalid:8090"},
+		{"grpc://[::1]:15151", "http://[::1]:8090"},
+		{"grpc://runtime.example.invalid", "http://runtime.example.invalid:8090"},
+		// Spice Cloud Flight hosts other than the default still use Spice Cloud HTTP.
+		{"grpc+tls://us-west-2.flight.spiceai.io:443", defaultCloudConfig.HttpUrl},
+		// Known pairings are unchanged.
+		{"grpc://127.0.0.1:50051", "http://127.0.0.1:8090"},
+		{"flight.spiceai.io:443", defaultCloudConfig.HttpUrl},
+		// No readable host: no HTTP endpoint at all rather than a guessed one.
+		{"grpc://", ""},
+	} {
+		t.Run(tt.flight, func(t *testing.T) {
+			spice := NewSpiceClient()
+			defer func() { _ = spice.Close() }()
+			if err := spice.Init(WithFlightAddress(tt.flight)); err != nil {
+				t.Fatalf("error initializing SpiceClient: %v", err)
+			}
+			if spice.baseHttpUrl != tt.want {
+				t.Fatalf("Init(WithFlightAddress(%q)): baseHttpUrl = %q, want %q", tt.flight, spice.baseHttpUrl, tt.want)
+			}
+			if got := NewSpiceClientWithAddress(tt.flight).baseHttpUrl; got != tt.want {
+				t.Fatalf("NewSpiceClientWithAddress(%q): baseHttpUrl = %q, want %q", tt.flight, got, tt.want)
+			}
+		})
+	}
+}
+
+// With only a custom Flight address and an API key configured, RefreshDataset
+// and IsSpiceReady must not contact Spice Cloud or send it the key.
+func TestCustomFlightAddressNeverSendsApiKeyToSpiceCloud(t *testing.T) {
+	cloudHits := 0
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cloudHits++
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer cloud.Close()
+
+	savedCloud := defaultCloudConfig
+	defer func() { defaultCloudConfig = savedCloud }()
+	defaultCloudConfig.HttpUrl = cloud.URL
+
+	spice := NewSpiceClient()
+	defer func() { _ = spice.Close() }()
+	if err := spice.Init(
+		WithFlightAddress("grpc://runtime.example.invalid:15151"),
+		WithApiKey("local-runtime-key"),
+	); err != nil {
+		t.Fatalf("error initializing SpiceClient: %v", err)
+	}
+	spice.maxRetries = 0
+
+	ctx := context.Background()
+	err := spice.RefreshDataset(ctx, "some_dataset", nil)
+	if err == nil {
+		t.Fatalf("RefreshDataset against an unreachable custom host succeeded; want a connection error")
+	}
+	if !strings.Contains(err.Error(), "runtime.example.invalid") {
+		t.Fatalf("RefreshDataset error %q does not name the configured host", err)
+	}
+	if spice.IsSpiceReady(ctx) {
+		t.Fatalf("IsSpiceReady reported ready for an unreachable custom host")
+	}
+	if cloudHits != 0 {
+		t.Fatalf("a client on a custom Flight address sent %d HTTP request(s) to Spice Cloud; want 0", cloudHits)
 	}
 }

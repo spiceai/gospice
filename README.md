@@ -293,9 +293,11 @@ if !spice.IsSpiceReady(ctx) {
 
 Both report on the runtime behind the client's HTTP endpoint, which by default is paired
 with the Flight endpoint the client was initialized with — a client left on the local
-Flight default checks the local runtime, not Spice Cloud. Only the local and Spice Cloud
-Flight addresses have a paired HTTP endpoint; a client on any other Flight address keeps
-the Spice Cloud HTTP default until `WithHttpAddress` names its runtime's own.
+Flight default checks the local runtime, not Spice Cloud. A client on any other Flight
+address uses the runtime's default HTTP port on the same host (`grpc://10.0.0.5:50051`
+pairs with `http://10.0.0.5:8090`; a TLS Flight address pairs with `https://`), so HTTP
+calls and the API key never go to a host you did not configure. Pass `WithHttpAddress`
+when the runtime serves HTTP somewhere else.
 
 ### Runtime Status
 
@@ -355,8 +357,8 @@ for which the runtime establishes no principal at all share the `public` scope.
 Both calls address the client's HTTP endpoint, which is paired with the Flight endpoint
 for the two addresses that have a known pairing: a client on the local Flight address uses
 `http://127.0.0.1:8090`, and `WithSpiceCloudAddress` moves both to Spice Cloud. Any other
-Flight address has no paired HTTP endpoint, so pass `WithHttpAddress` — as you also would
-when the runtime serves its HTTP API somewhere else:
+Flight address pairs with port 8090 on the same host. Pass `WithHttpAddress` when the
+runtime serves its HTTP API somewhere else:
 
 ```go
 if err := spice.Init(gospice.WithHttpAddress("http://127.0.0.1:8091")); err != nil {
