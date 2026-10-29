@@ -169,7 +169,8 @@ func TestCustomFlightAddressDerivesHttpUrlOnTheSameHost(t *testing.T) {
 		// gRPC resolver targets: the application endpoint is the path, and a
 		// dns:// authority names the resolver, never the host to send HTTP to.
 		{"dns:///runtime.example.invalid:443", "https://runtime.example.invalid:8090"},
-		{"dns://resolver.example.invalid:53/runtime.example.invalid:443", "https://runtime.example.invalid:8090"},
+		// An explicit DNS resolver is not used for HTTP, so no host is derived.
+		{"dns://resolver.example.invalid:53/runtime.example.invalid:443", ""},
 		{"dns:///flight.spiceai.io:443", defaultCloudConfig.HttpUrl},
 		{"passthrough:///runtime.example.invalid:50051", "https://runtime.example.invalid:8090"},
 		{"dns:runtime.example.invalid:443", "https://runtime.example.invalid:8090"},

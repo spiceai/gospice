@@ -406,8 +406,8 @@ const defaultRuntimeHttpPort = "8090"
 // grpc://). It understands the forms createClient and gRPC accept: a bare
 // host[:port], grpc://, grpc+tcp:// and grpc+tls:// addresses, and the dns: and
 // passthrough: resolver targets, whose application endpoint is the path after
-// the authority (dns://resolver/host:port names the resolver, not the host).
-// Anything else reports false.
+// the authority. A dns:// target with an explicit resolver authority reports
+// false, as does anything else.
 func flightTargetHost(address string) (host string, tls bool, ok bool) {
 	tls = true
 	// Opaque resolver targets (dns:host:port, passthrough:host:port) name the
@@ -431,6 +431,12 @@ func flightTargetHost(address string) (host string, tls bool, ok bool) {
 		case "dns", "passthrough":
 			slash := strings.Index(rest, "/")
 			if slash < 0 {
+				return "", false, false
+			}
+			// dns://resolver/host names a resolver the HTTP client does not use;
+			// a host derived from it could resolve to a different deployment, so
+			// such a target needs WithHttpAddress.
+			if scheme == "dns" && slash > 0 {
 				return "", false, false
 			}
 			authority = rest[slash+1:]
