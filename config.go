@@ -12,12 +12,19 @@ const GO_SPICE_VERSION = "9.1.0"
 type ClientConfig struct {
 	HttpUrl   string `json:"http_url,omitempty"`
 	FlightUrl string `json:"flight_url,omitempty"`
+
+	// httpUrlFromEnv records that HttpUrl came from SPICE_HTTP_URL rather
+	// than the built-in default, so a client on a custom Flight address keeps
+	// that explicitly configured endpoint.
+	httpUrlFromEnv bool
 }
 
 func LoadConfig() ClientConfig {
+	_, httpUrlFromEnv := os.LookupEnv("SPICE_HTTP_URL")
 	return ClientConfig{
-		HttpUrl:   getEnvOrDefault("SPICE_HTTP_URL", "https://data.spiceai.io"),
-		FlightUrl: getEnvOrDefault("SPICE_FLIGHT_URL", "flight.spiceai.io:443"),
+		HttpUrl:        getEnvOrDefault("SPICE_HTTP_URL", "https://data.spiceai.io"),
+		FlightUrl:      getEnvOrDefault("SPICE_FLIGHT_URL", "flight.spiceai.io:443"),
+		httpUrlFromEnv: httpUrlFromEnv,
 	}
 }
 

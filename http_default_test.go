@@ -147,6 +147,7 @@ func TestCustomFlightAddressDerivesHttpUrlOnTheSameHost(t *testing.T) {
 	defaultLocalConfig.HttpUrl = "http://127.0.0.1:8090"
 	defaultCloudConfig.FlightUrl = "flight.spiceai.io:443"
 	defaultCloudConfig.HttpUrl = "https://data.example.invalid"
+	defaultCloudConfig.httpUrlFromEnv = false
 
 	for _, tt := range []struct {
 		flight string
@@ -164,8 +165,17 @@ func TestCustomFlightAddressDerivesHttpUrlOnTheSameHost(t *testing.T) {
 		// Known pairings are unchanged.
 		{"grpc://127.0.0.1:50051", "http://127.0.0.1:8090"},
 		{"flight.spiceai.io:443", defaultCloudConfig.HttpUrl},
+		// gRPC resolver targets: the application endpoint is the path, and a
+		// dns:// authority names the resolver, never the host to send HTTP to.
+		{"dns:///runtime.example.invalid:443", "https://runtime.example.invalid:8090"},
+		{"dns://resolver.example.invalid:53/runtime.example.invalid:443", "https://runtime.example.invalid:8090"},
+		{"dns:///flight.spiceai.io:443", defaultCloudConfig.HttpUrl},
+		{"passthrough:///runtime.example.invalid:50051", "https://runtime.example.invalid:8090"},
 		// No readable host: no HTTP endpoint at all rather than a guessed one.
 		{"grpc://", ""},
+		{"dns://resolver.example.invalid:53", ""},
+		{"unix:///tmp/spice.sock", ""},
+		{"unix:/tmp/spice.sock", ""},
 	} {
 		t.Run(tt.flight, func(t *testing.T) {
 			spice := NewSpiceClient()
@@ -196,6 +206,7 @@ func TestCustomFlightAddressNeverSendsApiKeyToSpiceCloud(t *testing.T) {
 	savedCloud := defaultCloudConfig
 	defer func() { defaultCloudConfig = savedCloud }()
 	defaultCloudConfig.HttpUrl = cloud.URL
+	defaultCloudConfig.httpUrlFromEnv = false
 
 	spice := NewSpiceClient()
 	defer func() { _ = spice.Close() }()
@@ -220,5 +231,24 @@ func TestCustomFlightAddressNeverSendsApiKeyToSpiceCloud(t *testing.T) {
 	}
 	if cloudHits != 0 {
 		t.Fatalf("a client on a custom Flight address sent %d HTTP request(s) to Spice Cloud; want 0", cloudHits)
+	}
+}
+
+// An HTTP endpoint configured explicitly through SPICE_HTTP_URL keeps applying
+// to a client on a custom Flight address, as it did before same-host pairing.
+func TestSpiceHttpUrlEnvOverrideIsKeptForCustomFlightAddress(t *testing.T) {
+	savedCloud := defaultCloudConfig
+	defer func() { defaultCloudConfig = savedCloud }()
+
+	t.Setenv("SPICE_HTTP_URL", "https://runtime.example.invalid:8443")
+	defaultCloudConfig = LoadConfig()
+
+	spice := NewSpiceClient()
+	defer func() { _ = spice.Close() }()
+	if err := spice.Init(WithFlightAddress("grpc://runtime.example.invalid:50051")); err != nil {
+		t.Fatalf("error initializing SpiceClient: %v", err)
+	}
+	if want := "https://runtime.example.invalid:8443"; spice.baseHttpUrl != want {
+		t.Fatalf("baseHttpUrl = %q, want the SPICE_HTTP_URL endpoint %q", spice.baseHttpUrl, want)
 	}
 }

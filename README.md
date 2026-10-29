@@ -296,8 +296,9 @@ with the Flight endpoint the client was initialized with — a client left on th
 Flight default checks the local runtime, not Spice Cloud. A client on any other Flight
 address uses the runtime's default HTTP port on the same host (`grpc://10.0.0.5:50051`
 pairs with `http://10.0.0.5:8090`; a TLS Flight address pairs with `https://`), so HTTP
-calls and the API key never go to a host you did not configure. Pass `WithHttpAddress`
-when the runtime serves HTTP somewhere else.
+calls and the API key never go to a host you did not configure. `SPICE_HTTP_URL`, when
+set, still takes precedence for such an address. Pass `WithHttpAddress` when the runtime
+serves HTTP somewhere else.
 
 ### Runtime Status
 
