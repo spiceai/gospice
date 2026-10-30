@@ -142,10 +142,11 @@ func (r *leasedRecordReader) Release() {
 // configuration: endpoint URI, credentials, TLS material and user agent.
 func (c *SpiceClient) adbcOptions() (map[string]string, error) {
 	// Use the same transport policy as the native Flight client (Sql): TLS
-	// unless the address explicitly asks for plaintext with grpc:// or
-	// grpc+tcp://. A bare host:port used to dial plaintext here unless it
-	// looked like Spice Cloud or TLS material was configured, so SqlWithParams
-	// sent the API key in cleartext to an address Sql reached over TLS.
+	// unless the address explicitly asks for plaintext with grpc://. A bare
+	// host:port used to dial plaintext here unless a substring match on the
+	// address (":443", "spiceai.io") or configured TLS material said
+	// otherwise, so SqlWithParams sent the API key in cleartext to an address
+	// Sql reached over TLS.
 	target, useTLS := flightTransport(c.flightAddress)
 	uri := "grpc://" + target
 	if useTLS {

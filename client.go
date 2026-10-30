@@ -399,18 +399,17 @@ func defaultHttpUrlFor(flightAddress string) (string, bool) {
 // Sql (native Flight) and SqlWithParams (ADBC FlightSQL) both use it, so the
 // same address never means TLS on one path and plaintext on the other.
 //
-// Only an explicit plaintext scheme, grpc:// or grpc+tcp://, dials without
-// TLS. A grpc+tls:// address, and any address without one of these schemes
-// (a bare host:port included), uses TLS.
+// Only an explicit grpc:// prefix dials without TLS. A grpc+tls:// address has
+// its scheme removed and uses TLS. Every other address, a bare host:port
+// included, uses TLS whatever its host or port: the decision never depends on
+// whether the host looks like Spice Cloud, so a misspelled or unexpected host
+// fails a TLS handshake instead of falling back to plaintext.
 func flightTransport(address string) (target string, useTLS bool) {
-	lower := strings.ToLower(address)
-	for _, scheme := range []string{"grpc://", "grpc+tcp://"} {
-		if strings.HasPrefix(lower, scheme) {
-			return address[len(scheme):], false
-		}
+	if rest, ok := strings.CutPrefix(address, "grpc://"); ok {
+		return rest, false
 	}
-	if strings.HasPrefix(lower, "grpc+tls://") {
-		return address[len("grpc+tls://"):], true
+	if rest, ok := strings.CutPrefix(address, "grpc+tls://"); ok {
+		return rest, true
 	}
 	return address, true
 }

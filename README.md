@@ -205,7 +205,7 @@ if err := spice.Init(
 }
 ```
 
-The scheme on the Flight address picks the transport for `Sql` and `SqlWithParams` alike: `grpc://` (or `grpc+tcp://`) is plaintext, and `grpc+tls://` or a bare `host:port` uses TLS. A runtime serving plaintext Flight needs the explicit `grpc://` prefix.
+The scheme on the Flight address picks the transport for `Sql` and `SqlWithParams` alike: `grpc://` is plaintext, and `grpc+tls://` or any other address, including a bare `host:port`, uses TLS. A runtime serving plaintext Flight needs the explicit `grpc://` prefix.
 
 #### Local runtime secured with an API key
 
