@@ -205,6 +205,8 @@ if err := spice.Init(
 }
 ```
 
+The scheme on the Flight address picks the transport for `Sql` and `SqlWithParams` alike: `grpc://` is plaintext, and `grpc+tls://` or any other address, including a bare `host:port`, uses TLS. A runtime serving plaintext Flight needs the explicit `grpc://` prefix.
+
 #### Local runtime secured with an API key
 
 A Spice OSS runtime with [API key auth](https://spiceai.org/docs/api/auth) enabled accepts the key as an `Authorization: Bearer <key>` header. Pass the key with `WithApiKey`; any non-empty key is accepted:

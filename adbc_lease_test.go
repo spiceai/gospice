@@ -258,7 +258,7 @@ func TestADBCOptionsCarryTLSMaterial(t *testing.T) {
 		}
 	})
 
-	t.Run("no TLS configured leaves options and scheme alone", func(t *testing.T) {
+	t.Run("no TLS configured leaves TLS options unset", func(t *testing.T) {
 		spice := NewSpiceClient()
 		spice.flightAddress = "127.0.0.1:50051"
 
@@ -272,8 +272,10 @@ func TestADBCOptionsCarryTLSMaterial(t *testing.T) {
 				t.Errorf("%s should be absent when no TLS is configured", key)
 			}
 		}
-		if got := options[adbc.OptionKeyURI]; got != "grpc://127.0.0.1:50051" {
-			t.Errorf("URI = %q, want plaintext scheme", got)
+		// A bare host:port is TLS whether or not TLS material is configured,
+		// as it is for Sql.
+		if got := options[adbc.OptionKeyURI]; got != "grpc+tls://127.0.0.1:50051" {
+			t.Errorf("URI = %q, want the TLS scheme for a bare host:port", got)
 		}
 	})
 
