@@ -14,7 +14,7 @@ import (
 
 // TestADBCOptionsSchemeMatchesFlight checks that SqlWithParams (ADBC) and Sql
 // (native Flight) choose the same transport for the same Flight address. A bare
-// host:port is TLS on both; only an explicit grpc:// or grpc+tcp:// is plaintext.
+// host:port is TLS on both; only an explicit grpc:// is plaintext.
 func TestADBCOptionsSchemeMatchesFlight(t *testing.T) {
 	cases := []struct {
 		address string
