@@ -394,6 +394,27 @@ func defaultHttpUrlFor(flightAddress string) (string, bool) {
 	}
 }
 
+// flightTransport returns the target to dial for a Flight address and whether
+// the connection uses TLS. It is the one transport policy for this client:
+// Sql (native Flight) and SqlWithParams (ADBC FlightSQL) both use it, so the
+// same address never means TLS on one path and plaintext on the other.
+//
+// Only an explicit plaintext scheme, grpc:// or grpc+tcp://, dials without
+// TLS. A grpc+tls:// address, and any address without one of these schemes
+// (a bare host:port included), uses TLS.
+func flightTransport(address string) (target string, useTLS bool) {
+	lower := strings.ToLower(address)
+	for _, scheme := range []string{"grpc://", "grpc+tcp://"} {
+		if strings.HasPrefix(lower, scheme) {
+			return address[len(scheme):], false
+		}
+	}
+	if strings.HasPrefix(lower, "grpc+tls://") {
+		return address[len("grpc+tls://"):], true
+	}
+	return address, true
+}
+
 func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool) (flight.Client, error) {
 	grpcDialOpts := []grpc.DialOption{
 		grpc.WithDefaultCallOptions(
@@ -408,8 +429,8 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 		grpcDialOpts = append(grpcDialOpts, grpc.WithDefaultServiceConfig(cfg))
 	}
 
-	if strings.HasPrefix(address, "grpc://") {
-		address = strings.TrimPrefix(address, "grpc://")
+	address, useTLS := flightTransport(address)
+	if !useTLS {
 		grpcDialOpts = append(grpcDialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	} else {
 		tlsConfig := &tls.Config{
