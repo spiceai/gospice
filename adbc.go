@@ -141,21 +141,16 @@ func (r *leasedRecordReader) Release() {
 // adbcOptions builds the FlightSQL driver options for the current client
 // configuration: endpoint URI, credentials, TLS material and user agent.
 func (c *SpiceClient) adbcOptions() (map[string]string, error) {
-	// A custom CA or a client certificate only means anything over TLS, so
-	// configuring either forces the TLS scheme rather than letting the
-	// :443/spiceai.io heuristic below decide.
-	tlsConfigured := c.tlsRootCertFile != "" || (c.tlsClientCertFile != "" && c.tlsClientKeyFile != "")
-
-	// Format the URI correctly for ADBC FlightSQL driver
-	uri := c.flightAddress
-	// If it doesn't start with grpc:// or grpc+tls://, add the appropriate scheme
-	if !strings.HasPrefix(uri, "grpc://") && !strings.HasPrefix(uri, "grpc+tls://") {
-		// For cloud addresses (with port 443 or containing spiceai.io), use grpc+tls
-		if tlsConfigured || strings.Contains(uri, ":443") || strings.Contains(uri, "spiceai.io") {
-			uri = "grpc+tls://" + uri
-		} else {
-			uri = "grpc://" + uri
-		}
+	// Use the same transport policy as the native Flight client (Sql): TLS
+	// unless the address explicitly asks for plaintext with grpc://. A bare
+	// host:port used to dial plaintext here unless a substring match on the
+	// address (":443", "spiceai.io") or configured TLS material said
+	// otherwise, so SqlWithParams sent the API key in cleartext to an address
+	// Sql reached over TLS.
+	target, useTLS := flightTransport(c.flightAddress)
+	uri := "grpc://" + target
+	if useTLS {
+		uri = "grpc+tls://" + target
 	}
 
 	// Prepare connection options
