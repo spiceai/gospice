@@ -1,9 +1,12 @@
 package gospice
 
 import (
+	"github.com/apache/arrow-adbc/go/adbc"
+
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -156,7 +159,6 @@ func TestCustomFlightAddressDerivesHttpUrlOnTheSameHost(t *testing.T) {
 	}{
 		{"grpc://127.0.0.1:15151", "http://127.0.0.1:8090"},
 		{"grpc://runtime.example.invalid:50051", "http://runtime.example.invalid:8090"},
-		{"grpc+tcp://runtime.example.invalid:50051", "http://runtime.example.invalid:8090"},
 		{"grpc+tls://runtime.example.invalid:50051", "https://runtime.example.invalid:8090"},
 		{"runtime.example.invalid:443", "https://runtime.example.invalid:8090"},
 		{"grpc://[::1]:15151", "http://[::1]:8090"},
@@ -181,6 +183,23 @@ func TestCustomFlightAddressDerivesHttpUrlOnTheSameHost(t *testing.T) {
 		{"dns://resolver.example.invalid:53", ""},
 		{"unix:///tmp/spice.sock", ""},
 		{"unix:/tmp/spice.sock", ""},
+		// Socket targets have no network host. net.SplitHostPort would read
+		// "unix" or "unix-abstract" as one, so they are rejected by name,
+		// including behind a transport or resolver prefix.
+		{"unix:spice.sock", ""},
+		{"unix-abstract:spice", ""},
+		{"UNIX:spice.sock", ""},
+		{"grpc://unix:spice.sock", ""},
+		{"grpc+tls://unix-abstract:spice", ""},
+		{"passthrough:///unix:/tmp/spice.sock", ""},
+		{"passthrough:unix:spice.sock", ""},
+		{"dns:///unix:443", ""},
+		{"runtime.example.invalid:https", ""},
+		// Schemes flightTransport does not strip cannot be dialed by Flight
+		// either, so HTTP must not quietly pick a transport for them.
+		{"grpc+tcp://runtime.example.invalid:50051", ""},
+		{"GRPC://runtime.example.invalid:50051", ""},
+		{"GRPC+TLS://runtime.example.invalid:50051", ""},
 	} {
 		t.Run(tt.flight, func(t *testing.T) {
 			spice := NewSpiceClient()
@@ -290,6 +309,65 @@ func TestEnvMovedFlightUrlDoesNotInheritTheBuiltInHttpDefault(t *testing.T) {
 			}
 			if spice.baseHttpUrl != tt.want {
 				t.Fatalf("baseHttpUrl = %q, want %q", spice.baseHttpUrl, tt.want)
+			}
+		})
+	}
+}
+
+// TestDerivedHttpUrlUsesTheFlightTransport checks that an HTTP endpoint
+// derived from a Flight address uses TLS exactly when Sql (native Flight) and
+// SqlWithParams (ADBC) dial that address with TLS, and names the host they
+// dial. An address that derives no HTTP endpoint is not checked further.
+func TestDerivedHttpUrlUsesTheFlightTransport(t *testing.T) {
+	savedLocal, savedCloud := defaultLocalConfig, defaultCloudConfig
+	defer func() { defaultLocalConfig, defaultCloudConfig = savedLocal, savedCloud }()
+	defaultLocalConfig.FlightUrl = "grpc://127.0.0.1:50051"
+	defaultLocalConfig.HttpUrl = "http://127.0.0.1:8090"
+	defaultCloudConfig.FlightUrl = "flight.spiceai.io:443"
+	defaultCloudConfig.HttpUrl = "https://data.example.invalid"
+	defaultCloudConfig.httpUrlFromEnv = false
+
+	for _, address := range []string{
+		"grpc://127.0.0.1:15151",
+		"grpc://runtime.example.invalid:50051",
+		"grpc+tls://runtime.example.invalid:50051",
+		"runtime.example.invalid:50051",
+		"grpc://[::1]:15151",
+		"dns:///runtime.example.invalid:443",
+		"grpc://dns:///runtime.example.invalid:50051",
+		"passthrough:///runtime.example.invalid:50051",
+		"dns:runtime.example.invalid:443",
+		"grpc+tcp://runtime.example.invalid:50051",
+		"GRPC://runtime.example.invalid:50051",
+		"unix:spice.sock",
+		"grpc://unix:spice.sock",
+	} {
+		t.Run(address, func(t *testing.T) {
+			httpUrl := httpUrlFor(address)
+			if httpUrl == "" {
+				return
+			}
+			u, err := url.Parse(httpUrl)
+			if err != nil {
+				t.Fatalf("derived HTTP URL %q: %v", httpUrl, err)
+			}
+			target, useTLS := flightTransport(address)
+			if want := map[bool]string{true: "https", false: "http"}[useTLS]; u.Scheme != want {
+				t.Fatalf("HTTP %q uses %s, but Flight dials %q with TLS=%v", httpUrl, u.Scheme, target, useTLS)
+			}
+
+			spice := NewSpiceClient()
+			spice.flightAddress = address
+			options, err := spice.adbcOptions()
+			if err != nil {
+				t.Fatalf("adbcOptions: %v", err)
+			}
+			wantURI := map[bool]string{true: "grpc+tls://", false: "grpc://"}[useTLS] + target
+			if got := options[adbc.OptionKeyURI]; got != wantURI {
+				t.Fatalf("SqlWithParams URI = %q, want %q", got, wantURI)
+			}
+			if !strings.Contains(target, u.Hostname()) {
+				t.Fatalf("HTTP host %q is not the host Flight dials (%q)", u.Hostname(), target)
 			}
 		})
 	}

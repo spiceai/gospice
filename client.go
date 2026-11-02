@@ -402,32 +402,43 @@ func httpUrlFor(flightAddress string) string {
 const defaultRuntimeHttpPort = "8090"
 
 // flightTargetHost returns the application host a Flight address dials, and
-// whether that connection uses TLS (createClient uses plaintext only for
-// grpc://). It understands the forms createClient and gRPC accept: a bare
-// host[:port], grpc://, grpc+tcp:// and grpc+tls:// addresses, and the dns: and
-// passthrough: resolver targets, whose application endpoint is the path after
-// the authority. A dns:// target with an explicit resolver authority reports
-// false, as does anything else.
+// whether that connection uses TLS.
+//
+// It starts from flightTransport, the same policy Sql (native Flight) and
+// SqlWithParams (ADBC) dial with, so the HTTP endpoint never uses a different
+// transport from the Flight connection: plaintext only for an explicit
+// grpc:// prefix, TLS for everything else. It then reads the dial target the
+// way gRPC does: a bare host[:port], or the dns: and passthrough: resolver
+// targets, whose application endpoint is the path after the authority.
+//
+// It reports false, so no HTTP endpoint is derived, for anything else:
+//   - a dns:// target with an explicit resolver authority, since that resolver
+//     is not the one the HTTP client uses;
+//   - unix: and unix-abstract: socket targets, alone or behind a transport or
+//     resolver prefix, which have no network host (net.SplitHostPort would
+//     otherwise read "unix" as a host name);
+//   - schemes flightTransport does not strip, such as grpc+tcp:// or GRPC://,
+//     which gRPC cannot dial either, so the Flight connection fails and HTTP
+//     must not quietly succeed in plaintext;
+//   - a port that is not a number.
 func flightTargetHost(address string) (host string, tls bool, ok bool) {
-	tls = true
+	target, tls := flightTransport(address)
+	if isSocketTarget(target) {
+		return "", false, false
+	}
 	// Opaque resolver targets (dns:host:port, passthrough:host:port) name the
 	// application endpoint directly.
-	if i := strings.Index(address, ":"); i >= 0 && !strings.Contains(address, "://") {
-		switch strings.ToLower(address[:i]) {
+	if i := strings.Index(target, ":"); i >= 0 && !strings.Contains(target, "://") {
+		switch strings.ToLower(target[:i]) {
 		case "dns", "passthrough":
-			address = strings.TrimPrefix(address[i+1:], "/")
+			target = strings.TrimPrefix(target[i+1:], "/")
 		}
 	}
-	authority := address
-	if i := strings.Index(address, "://"); i >= 0 {
-		scheme := strings.ToLower(address[:i])
-		rest := address[i+3:]
+	authority := target
+	if i := strings.Index(target, "://"); i >= 0 {
+		scheme := strings.ToLower(target[:i])
+		rest := target[i+3:]
 		switch scheme {
-		case "grpc", "grpc+tcp":
-			tls = false
-			authority = rest
-		case "grpc+tls":
-			authority = rest
 		case "dns", "passthrough":
 			slash := strings.Index(rest, "/")
 			if slash < 0 {
@@ -446,18 +457,22 @@ func flightTargetHost(address string) (host string, tls bool, ok bool) {
 		if j := strings.IndexAny(authority, "/?#"); j >= 0 {
 			authority = authority[:j]
 		}
-	} else if strings.ContainsAny(address, "/?#") {
+	} else if strings.ContainsAny(target, "/?#") {
+		return "", false, false
+	}
+	// passthrough:///unix:/path hands the socket address to gRPC's dialer.
+	if isSocketTarget(authority) {
 		return "", false, false
 	}
 
 	host = authority
 	if h, port, err := net.SplitHostPort(authority); err == nil {
-		if port == "" {
+		if !isPort(port) {
 			return "", false, false
 		}
 		host = h
 	} else if strings.Contains(authority, ":") && !strings.HasPrefix(authority, "[") {
-		// "scheme:opaque" targets such as unix:path have no host this client can name.
+		// "scheme:opaque" targets have no host this client can name.
 		return "", false, false
 	} else {
 		host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
@@ -466,6 +481,26 @@ func flightTargetHost(address string) (host string, tls bool, ok bool) {
 		return "", false, false
 	}
 	return host, tls, true
+}
+
+// isSocketTarget reports whether a gRPC target or dial address names a unix
+// domain socket (unix:path, unix:///path, unix-abstract:name).
+func isSocketTarget(target string) bool {
+	lower := strings.ToLower(target)
+	return strings.HasPrefix(lower, "unix:") || strings.HasPrefix(lower, "unix-abstract:")
+}
+
+// isPort reports whether port is a decimal TCP port number.
+func isPort(port string) bool {
+	if port == "" || len(port) > 5 {
+		return false
+	}
+	for _, r := range port {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // isCloudHost reports whether host is a Spice Cloud host.
