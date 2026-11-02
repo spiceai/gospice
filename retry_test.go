@@ -378,6 +378,26 @@ func TestAsyncActionNotRetriedAfterPartialResponse(t *testing.T) {
 	}
 }
 
+// A request too large for gRPC's retry buffer was never replayed by gRPC, and
+// is not replayed now: the runtime may have accepted it before the failure.
+func TestLargeAsyncActionNotRetried(t *testing.T) {
+	svc := &flakyActionFlight{failFirst: 1}
+	c := NewSpiceClient()
+	defer func() { _ = c.Close() }()
+	if err := c.Init(WithFlightAddress(startFlakyActionServer(t, svc))); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	big := map[string]string{"sql": "SELECT '" + strings.Repeat("x", maxReplayableActionBytes) + "'"}
+	if _, err := c.doAction(ctx, actionSubmitAsyncQuery, big); status.Code(err) != codes.Unavailable {
+		t.Fatalf("doAction with an oversized request = %v, want the Unavailable it ended with", err)
+	}
+	if got := svc.calls.Load(); got != 1 {
+		t.Fatalf("server saw %d DoAction calls, want 1 (no replay of an oversized request)", got)
+	}
+}
+
 func testAsyncActionNotRetried(t *testing.T, svc *flakyActionFlight) {
 	c := NewSpiceClient()
 	defer func() { _ = c.Close() }()

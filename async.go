@@ -25,6 +25,10 @@ const (
 	actionGetAsyncQueryStatus = "GetAsyncQueryStatus"
 	actionGetAsyncQueryResult = "GetAsyncQueryResult"
 	actionCancelAsyncQuery    = "CancelAsyncQuery"
+
+	// maxReplayableActionBytes mirrors gRPC's default per-RPC retry buffer
+	// (256 KiB), less a margin for the Action message framing.
+	maxReplayableActionBytes = 256<<10 - 64
 )
 
 // asyncPollInterval is how often Wait polls the runtime for status changes.
@@ -307,9 +311,15 @@ func (c *SpiceClient) doAction(ctx context.Context, actionType string, request a
 		return nil, fmt.Errorf("failed to marshal %s request: %w", actionType, err)
 	}
 
+	// gRPC never replays a request larger than its 256 KiB retry buffer,
+	// because the runtime may already have received and acted on it. Keep that
+	// cutoff (with room for the Action framing) so a large submission is not
+	// run twice.
+	replayable := len(actionType)+len(reqBody) <= maxReplayableActionBytes
+
 	var out []byte
 	err = c.withRetries(ctx, func() error {
-		committed := false
+		committed := !replayable
 		err := c.withSession(ctx, func(ctx context.Context) error {
 			stream, err := c.flightClient.DoAction(ctx, &flight.Action{Type: actionType, Body: reqBody})
 			if err != nil {
