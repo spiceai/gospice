@@ -294,3 +294,87 @@ func TestSetMaxRetriesConcurrentWithCalls(t *testing.T) {
 	c.SetMaxRetries(1)
 	wg.Wait()
 }
+
+// flakyActionFlight fails the first failFirst DoAction calls with Unavailable,
+// optionally after sending one result, and then answers "ok".
+type flakyActionFlight struct {
+	flight.BaseFlightServer
+	failFirst   int32
+	sendPartial bool
+	calls       atomic.Int32
+}
+
+func (s *flakyActionFlight) DoAction(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
+	if s.calls.Add(1) <= s.failFirst {
+		if s.sendPartial {
+			if err := stream.Send(&flight.Result{Body: []byte("partial")}); err != nil {
+				return err
+			}
+		}
+		return status.Error(codes.Unavailable, "unavailable")
+	}
+	return stream.Send(&flight.Result{Body: []byte("ok")})
+}
+
+func startFlakyActionServer(t *testing.T, svc *flakyActionFlight) string {
+	t.Helper()
+	srv := flight.NewServerWithMiddleware(nil)
+	srv.RegisterFlightService(svc)
+	if err := srv.Init("127.0.0.1:0"); err != nil {
+		t.Fatalf("start flight server: %v", err)
+	}
+	go func() { _ = srv.Serve() }()
+	t.Cleanup(srv.Shutdown)
+	return "grpc://" + srv.Addr().String()
+}
+
+// The async query actions (Query, status polling, results, cancel) retry a
+// transient failure the same way Sql does, with the retry count read per call.
+func TestWithRetriesCoversAsyncActions(t *testing.T) {
+	svc := &flakyActionFlight{failFirst: 1}
+	c := NewSpiceClient()
+	defer func() { _ = c.Close() }()
+	c.SetMaxRetries(0)
+	if err := c.Init(WithFlightAddress(startFlakyActionServer(t, svc))); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	c.SetMaxRetries(3)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	body, err := c.doAction(ctx, actionGetAsyncQueryStatus, getAsyncQueryStatusRequest{QueryID: "q"})
+	if err != nil || string(body) != "ok" {
+		t.Fatalf("doAction after one Unavailable = %q, %v; want \"ok\" from the retry", body, err)
+	}
+	if got := svc.calls.Load(); got != 2 {
+		t.Fatalf("server saw %d DoAction calls, want 2", got)
+	}
+
+	svc.calls.Store(0)
+	c.SetMaxRetries(0)
+	if _, err := c.doAction(ctx, actionGetAsyncQueryStatus, getAsyncQueryStatusRequest{QueryID: "q"}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("doAction with SetMaxRetries(0) = %v, want Unavailable", err)
+	}
+	if got := svc.calls.Load(); got != 1 {
+		t.Fatalf("server saw %d DoAction calls with retries disabled, want 1", got)
+	}
+}
+
+// An action whose response was cut off after the runtime sent a result is not
+// replayed.
+func TestAsyncActionNotRetriedAfterPartialResponse(t *testing.T) {
+	svc := &flakyActionFlight{failFirst: 1, sendPartial: true}
+	c := NewSpiceClient()
+	defer func() { _ = c.Close() }()
+	if err := c.Init(WithFlightAddress(startFlakyActionServer(t, svc))); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := c.doAction(ctx, actionSubmitAsyncQuery, map[string]string{"sql": "SELECT 1"}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("doAction after a partial response = %v, want the Unavailable it ended with", err)
+	}
+	if got := svc.calls.Load(); got != 1 {
+		t.Fatalf("server saw %d DoAction calls, want 1 (no replay after a partial response)", got)
+	}
+}

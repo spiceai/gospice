@@ -496,7 +496,9 @@ spice.SetMaxRetries(5) // Setting to 0 will disable retries
 
 Retries are performed for connection and system internal errors. It is the SDK user's responsibility to properly
 handle other errors, for example RESOURCE_EXHAUSTED (HTTP 429). Retrying also stops when the
-call's context ends.
+call's context ends. The async query calls (`Query`, `Status`, `Wait`, `Results`, `Cancel`) are
+retried only while the runtime has sent no part of the response; one cut off part way returns
+its error rather than being replayed.
 
 When the runtime cannot be reached (not started, restarting, or a wrong address), each attempt
 fails right away, so a call returns an `UNAVAILABLE` error within a few seconds, even with

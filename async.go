@@ -13,6 +13,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/cenkalti/backoff/v4"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Flight DoAction action types for async queries, served by Spice.ai OSS v2.0+
@@ -305,23 +308,39 @@ func (c *SpiceClient) doAction(ctx context.Context, actionType string, request a
 	}
 
 	var out []byte
-	err = c.withSession(ctx, func(ctx context.Context) error {
-		stream, err := c.flightClient.DoAction(ctx, &flight.Action{Type: actionType, Body: reqBody})
-		if err != nil {
-			return err
-		}
-
-		out = out[:0]
-		for {
-			res, err := stream.Recv()
-			if err == io.EOF {
-				return nil
-			}
+	err = c.withRetries(ctx, func() error {
+		received := false
+		err := c.withSession(ctx, func(ctx context.Context) error {
+			stream, err := c.flightClient.DoAction(ctx, &flight.Action{Type: actionType, Body: reqBody})
 			if err != nil {
 				return err
 			}
-			out = append(out, res.Body...)
+
+			out = out[:0]
+			for {
+				res, err := stream.Recv()
+				if err == io.EOF {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				received = true
+				out = append(out, res.Body...)
+			}
+		})
+		if err == nil {
+			return nil
 		}
+		// Retry a transient failure, but only before the runtime has sent any
+		// result: an action whose response was cut off part way is not replayed.
+		if st, ok := status.FromError(err); ok && !received {
+			switch st.Code() {
+			case codes.Unavailable, codes.Unknown, codes.Internal:
+				return err
+			}
+		}
+		return backoff.Permanent(err)
 	})
 	if err != nil {
 		return nil, err
