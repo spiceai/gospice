@@ -489,8 +489,10 @@ See [query_test.go](query_test.go) for examples on querying TPC-H and taxi trips
 
 ### Connection retry
 
-The `SpiceClient` implements connection retry mechanism (3 attempts by default).
-The number of attempts can be configured via `SetMaxRetries`:
+The `SpiceClient` retries transient failures (connection errors, `UNAVAILABLE`, `INTERNAL` and
+similar) up to 3 times by default, with exponential backoff, and then returns the last error.
+The number of retries can be configured via `SetMaxRetries`, before or after `Init`; it takes
+effect on the next call:
 
 ```go
 spice := gospice.NewSpiceClient()
@@ -498,7 +500,30 @@ spice.SetMaxRetries(5) // Setting to 0 will disable retries
 ```
 
 Retries are performed for connection and system internal errors. It is the SDK user's responsibility to properly
-handle other errors, for example RESOURCE_EXHAUSTED (HTTP 429).
+handle other errors, for example RESOURCE_EXHAUSTED (HTTP 429). Retrying also stops when the
+call's context ends. The async query calls (`Query`, `Status`, `Wait`, `Results`, `Cancel`) are
+retried only until the runtime starts answering (response headers or a result); one cut off after that returns
+its error rather than being replayed.
+
+When the runtime refuses connections (not started, restarting, or a wrong port), each attempt
+fails right away, so a call returns an `UNAVAILABLE` error within a few seconds, even with
+`context.Background()`. A connection attempt that gets no answer at all, such as one dropped by a
+firewall or a stalled TLS handshake, lasts until the operating system or gRPC gives up on it, so
+give calls a context with a deadline in production either way. To have native Flight calls (`Sql`, `Query` and async queries) wait for
+the runtime instead, for example in a client that starts before its runtime, opt in with
+`WithWaitForReady(true)` and give each call a context with a deadline, since a call then blocks
+until the runtime is reachable or the context ends:
+
+```go
+err := spice.Init(gospice.WithWaitForReady(true))
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+reader, err := spice.Sql(ctx, "SELECT 1")
+```
+
+In v9.1.0 and earlier this waiting was always on: a call against an unreachable runtime blocked until its
+context ended (forever with `context.Background()`), and `SetMaxRetries` only took effect when
+called before `Init`.
 
 ## Upgrading from v8 to v9
 

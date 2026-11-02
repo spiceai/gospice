@@ -13,6 +13,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/cenkalti/backoff/v4"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Flight DoAction action types for async queries, served by Spice.ai OSS v2.0+
@@ -22,6 +25,10 @@ const (
 	actionGetAsyncQueryStatus = "GetAsyncQueryStatus"
 	actionGetAsyncQueryResult = "GetAsyncQueryResult"
 	actionCancelAsyncQuery    = "CancelAsyncQuery"
+
+	// maxReplayableActionBytes mirrors gRPC's default per-RPC retry buffer
+	// (256 KiB), less a margin for the Action message framing.
+	maxReplayableActionBytes = 256<<10 - 64
 )
 
 // asyncPollInterval is how often Wait polls the runtime for status changes.
@@ -304,24 +311,53 @@ func (c *SpiceClient) doAction(ctx context.Context, actionType string, request a
 		return nil, fmt.Errorf("failed to marshal %s request: %w", actionType, err)
 	}
 
-	var out []byte
-	err = c.withSession(ctx, func(ctx context.Context) error {
-		stream, err := c.flightClient.DoAction(ctx, &flight.Action{Type: actionType, Body: reqBody})
-		if err != nil {
-			return err
-		}
+	// gRPC never replays a request larger than its 256 KiB retry buffer,
+	// because the runtime may already have received and acted on it. Keep that
+	// cutoff (with room for the Action framing) so a large submission is not
+	// run twice.
+	replayable := len(actionType)+len(reqBody) <= maxReplayableActionBytes
 
-		out = out[:0]
-		for {
-			res, err := stream.Recv()
-			if err == io.EOF {
-				return nil
-			}
+	var out []byte
+	err = c.withRetries(ctx, func() error {
+		committed := !replayable
+		err := c.withSession(ctx, func(ctx context.Context) error {
+			stream, err := c.flightClient.DoAction(ctx, &flight.Action{Type: actionType, Body: reqBody})
 			if err != nil {
 				return err
 			}
-			out = append(out, res.Body...)
+
+			out = out[:0]
+			for {
+				res, err := stream.Recv()
+				if err == io.EOF {
+					return nil
+				}
+				if err != nil {
+					// Header returns nil once the stream has ended unless the
+					// runtime sent response headers, which commit the call.
+					if md, _ := stream.Header(); md != nil {
+						committed = true
+					}
+					return err
+				}
+				committed = true
+				out = append(out, res.Body...)
+			}
+		})
+		if err == nil {
+			return nil
 		}
+		// Retry a transient failure only while the call is uncommitted: once the
+		// runtime has sent response headers or a result it may have acted on the
+		// request (a submitted query has an ID the caller never saw), so the
+		// action is not replayed. This is the commit point gRPC's own retries use.
+		if st, ok := status.FromError(err); ok && !committed {
+			switch st.Code() {
+			case codes.Unavailable, codes.Unknown, codes.Internal:
+				return err
+			}
+		}
+		return backoff.Permanent(err)
 	})
 	if err != nil {
 		return nil, err

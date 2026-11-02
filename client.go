@@ -14,6 +14,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -50,13 +51,19 @@ type SpiceClient struct {
 	// sessionToken is the bearer token the runtime issued for apiKey on the
 	// last handshake, reused by every authenticated Flight call until the
 	// runtime stops recognising it; empty when no session is established.
-	sessionToken  string
-	adbcClient    *ADBCClient
-	adbcMu        sync.Mutex // guards re-initialization of adbcClient
-	httpClient    http.Client
-	backoffPolicy backoff.BackOff
-	maxRetries    uint
-	userAgent     string
+	sessionToken string
+	adbcClient   *ADBCClient
+	adbcMu       sync.Mutex // guards re-initialization of adbcClient
+	httpClient   http.Client
+	// maxRetries is read on every call, so SetMaxRetries takes effect whether
+	// it is called before or after Init, and concurrently with queries.
+	maxRetries atomic.Uint64
+	userAgent  string
+
+	// waitForReady makes native Flight calls wait for the connection to become
+	// ready instead of failing fast while the runtime is unreachable. Off by
+	// default; see WithWaitForReady.
+	waitForReady bool
 
 	tlsClientCertFile string
 	tlsClientKeyFile  string
@@ -87,9 +94,8 @@ func NewSpiceClientWithAddress(flightAddress string) *SpiceClient {
 				DisableCompression:  false,
 			},
 		},
-		maxRetries: 3,
 	}
-	spiceClient.backoffPolicy = spiceClient.getBackoffPolicy()
+	spiceClient.maxRetries.Store(defaultMaxRetries)
 	spiceClient.userAgent = GetSpiceUserAgent()
 	return spiceClient
 }
@@ -266,18 +272,50 @@ func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 	return nil
 }
 
-// Sets the maximum number of times to retry Query and FireQuery calls.
-// The default is 3. Setting to 0 will disable retries.
+// defaultMaxRetries is the number of retries a new client makes for a
+// transient failure, on top of the first attempt.
+const defaultMaxRetries = 3
+
+// SetMaxRetries sets the maximum number of times Sql, SqlWithParams and Query
+// retry a transient failure (Unavailable, Internal and similar) after the
+// first attempt. The default is 3. Setting it to 0 disables retries.
+//
+// It takes effect on the next call, whether it is called before or after Init.
 func (c *SpiceClient) SetMaxRetries(maxRetries uint) {
-	c.maxRetries = maxRetries
+	c.maxRetries.Store(uint64(maxRetries))
 }
 
-// withRetries runs op, retrying transient failures up to maxRetries times.
+// WithWaitForReady makes native Flight calls (Sql, Query and the async query
+// actions) wait for the connection to the runtime to become ready, instead of
+// failing with codes.Unavailable while it cannot be reached. A call then
+// blocks until the runtime is reachable or ctx ends, so pass a ctx with a
+// deadline: with context.Background() a call against a runtime that never
+// comes up never returns.
+//
+// It is off by default: an unreachable runtime fails each attempt fast with
+// Unavailable, and the call returns once SetMaxRetries retries are spent.
+// Use it for a client that starts before its runtime and should wait for it.
+// SqlWithParams (ADBC) does not use it.
+func WithWaitForReady(enabled bool) SpiceClientModifier {
+	return func(c *SpiceClient) error {
+		c.waitForReady = enabled
+		return nil
+	}
+}
+
+// withRetries runs op, retrying transient failures up to the current
+// maxRetries times with exponential backoff, and stops early once ctx ends.
 // When maxRetries is 0, retries are disabled: op runs once and its error is
-// returned as-is. grpc-go rejects a retryPolicy with MaxAttempts < 2, so
-// createClient also omits the Flight service-config retryPolicy in that case.
-func (c *SpiceClient) withRetries(op func() error) error {
-	if c.maxRetries == 0 {
+// returned as-is. Every call gets its own backoff, sized from maxRetries at
+// the time of the call.
+//
+// This is the only retry layer for Flight calls. The gRPC connection carries
+// no retryPolicy service config, which would be fixed at Init, would multiply
+// the attempts made here, and, combined with waitForReady, never let an
+// attempt fail while the runtime is unreachable.
+func (c *SpiceClient) withRetries(ctx context.Context, op func() error) error {
+	maxRetries := c.maxRetries.Load()
+	if maxRetries == 0 {
 		err := op()
 		// backoff.Retry unwraps *PermanentError so callers see the inner error.
 		// The single-attempt path must do the same: Sql and execADBCWithBackoff
@@ -288,28 +326,23 @@ func (c *SpiceClient) withRetries(op func() error) error {
 		}
 		return err
 	}
-	return backoff.Retry(op, backoff.WithMaxRetries(c.backoffPolicy, uint64(c.maxRetries)))
-}
-
-// flightServiceConfig is the gRPC default service config for the Flight client.
-// An empty string means no service config: the caller asked for zero retries.
-func (c *SpiceClient) flightServiceConfig() string {
-	if c.maxRetries == 0 {
-		return ""
+	b := backoff.WithContext(backoff.WithMaxRetries(newBackoffPolicy(maxRetries), maxRetries), ctx)
+	var lastErr error
+	err := backoff.Retry(func() error {
+		lastErr = op()
+		return lastErr
+	}, b)
+	// When ctx ends between attempts, backoff reports the bare context error.
+	// The last attempt's error says why the call failed (an rpc status naming
+	// the connection error), so return that instead.
+	if err != nil && lastErr != nil && ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		var permanent *backoff.PermanentError
+		if errors.As(lastErr, &permanent) {
+			return permanent.Err
+		}
+		return lastErr
 	}
-	return fmt.Sprintf(`{
-		"methodConfig": [{
-	        "name": [{"service": "arrow.flight.protocol.FlightService"}],
-	        "waitForReady": true,
-	        "retryPolicy": {
-	            "MaxAttempts": %d,
-	            "InitialBackoff": "0.1s",
-	            "MaxBackoff": "0.225s",
-	            "BackoffMultiplier": 1.5,
-				"RetryableStatusCodes": [ "UNAVAILABLE", "UNKNOWN", "INTERNAL" ]
-	        }
-	    }]
-	}`, c.maxRetries+1)
+	return err
 }
 
 // Close closes the SpiceClient and cleans up resources
@@ -576,8 +609,8 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 			"user-agent": c.userAgent,
 		})),
 	}
-	if cfg := c.flightServiceConfig(); cfg != "" {
-		grpcDialOpts = append(grpcDialOpts, grpc.WithDefaultServiceConfig(cfg))
+	if c.waitForReady {
+		grpcDialOpts = append(grpcDialOpts, grpc.WithDefaultCallOptions(grpc.WaitForReady(true)))
 	}
 
 	address, useTLS := flightTransport(address)
@@ -613,10 +646,12 @@ func (c *SpiceClient) createClient(address string, systemCertPool *x509.CertPool
 	return client, nil
 }
 
-func (c *SpiceClient) getBackoffPolicy() backoff.BackOff {
+// newBackoffPolicy returns the backoff between retries for a call that makes
+// up to maxRetries retries.
+func newBackoffPolicy(maxRetries uint64) backoff.BackOff {
 	initialInterval := 250 * time.Millisecond
-	maxInterval := initialInterval * time.Duration(math.Ceil(float64(c.maxRetries)*backoff.DefaultMultiplier))
-	maxElapsedTime := maxInterval * time.Duration(c.maxRetries)
+	maxInterval := initialInterval * time.Duration(math.Ceil(float64(maxRetries)*backoff.DefaultMultiplier))
+	maxElapsedTime := maxInterval * time.Duration(maxRetries)
 	b := &backoff.ExponentialBackOff{
 		InitialInterval:     initialInterval,
 		RandomizationFactor: backoff.DefaultRandomizationFactor, // 0.5
