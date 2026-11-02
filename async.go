@@ -309,7 +309,7 @@ func (c *SpiceClient) doAction(ctx context.Context, actionType string, request a
 
 	var out []byte
 	err = c.withRetries(ctx, func() error {
-		received := false
+		committed := false
 		err := c.withSession(ctx, func(ctx context.Context) error {
 			stream, err := c.flightClient.DoAction(ctx, &flight.Action{Type: actionType, Body: reqBody})
 			if err != nil {
@@ -323,18 +323,25 @@ func (c *SpiceClient) doAction(ctx context.Context, actionType string, request a
 					return nil
 				}
 				if err != nil {
+					// Header returns nil once the stream has ended unless the
+					// runtime sent response headers, which commit the call.
+					if md, _ := stream.Header(); md != nil {
+						committed = true
+					}
 					return err
 				}
-				received = true
+				committed = true
 				out = append(out, res.Body...)
 			}
 		})
 		if err == nil {
 			return nil
 		}
-		// Retry a transient failure, but only before the runtime has sent any
-		// result: an action whose response was cut off part way is not replayed.
-		if st, ok := status.FromError(err); ok && !received {
+		// Retry a transient failure only while the call is uncommitted: once the
+		// runtime has sent response headers or a result it may have acted on the
+		// request (a submitted query has an ID the caller never saw), so the
+		// action is not replayed. This is the commit point gRPC's own retries use.
+		if st, ok := status.FromError(err); ok && !committed {
 			switch st.Code() {
 			case codes.Unavailable, codes.Unknown, codes.Internal:
 				return err

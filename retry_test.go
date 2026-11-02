@@ -13,6 +13,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/cenkalti/backoff/v4"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -301,11 +302,17 @@ type flakyActionFlight struct {
 	flight.BaseFlightServer
 	failFirst   int32
 	sendPartial bool
+	sendHeader  bool
 	calls       atomic.Int32
 }
 
 func (s *flakyActionFlight) DoAction(_ *flight.Action, stream flight.FlightService_DoActionServer) error {
 	if s.calls.Add(1) <= s.failFirst {
+		if s.sendHeader {
+			if err := stream.SendHeader(metadata.Pairs("x-accepted", "1")); err != nil {
+				return err
+			}
+		}
 		if s.sendPartial {
 			if err := stream.Send(&flight.Result{Body: []byte("partial")}); err != nil {
 				return err
@@ -360,10 +367,18 @@ func TestWithRetriesCoversAsyncActions(t *testing.T) {
 	}
 }
 
-// An action whose response was cut off after the runtime sent a result is not
-// replayed.
+// An action the runtime has started answering, with response headers or a
+// result, is not replayed: a resubmitted query would run twice.
 func TestAsyncActionNotRetriedAfterPartialResponse(t *testing.T) {
-	svc := &flakyActionFlight{failFirst: 1, sendPartial: true}
+	for name, svc := range map[string]*flakyActionFlight{
+		"headers": {failFirst: 1, sendHeader: true},
+		"result":  {failFirst: 1, sendPartial: true},
+	} {
+		t.Run(name, func(t *testing.T) { testAsyncActionNotRetried(t, svc) })
+	}
+}
+
+func testAsyncActionNotRetried(t *testing.T, svc *flakyActionFlight) {
 	c := NewSpiceClient()
 	defer func() { _ = c.Close() }()
 	if err := c.Init(WithFlightAddress(startFlakyActionServer(t, svc))); err != nil {
