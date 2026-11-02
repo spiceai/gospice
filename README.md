@@ -500,9 +500,11 @@ call's context ends. The async query calls (`Query`, `Status`, `Wait`, `Results`
 retried only while the runtime has sent no part of the response; one cut off part way returns
 its error rather than being replayed.
 
-When the runtime cannot be reached (not started, restarting, or a wrong address), each attempt
+When the runtime refuses connections (not started, restarting, or a wrong port), each attempt
 fails right away, so a call returns an `UNAVAILABLE` error within a few seconds, even with
-`context.Background()`. To have native Flight calls (`Sql`, `Query` and async queries) wait for
+`context.Background()`. A connection attempt that gets no answer at all, such as one dropped by a
+firewall or a stalled TLS handshake, lasts until the operating system or gRPC gives up on it, so
+give calls a context with a deadline in production either way. To have native Flight calls (`Sql`, `Query` and async queries) wait for
 the runtime instead, for example in a client that starts before its runtime, opt in with
 `WithWaitForReady(true)` and give each call a context with a deadline, since a call then blocks
 until the runtime is reachable or the context ends:
