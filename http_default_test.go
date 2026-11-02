@@ -201,6 +201,9 @@ func TestCustomFlightAddressDerivesHttpUrlOnTheSameHost(t *testing.T) {
 		{"dns:///runtime.example.invalid%3A443", "https://runtime.example.invalid:8090"},
 		{"passthrough:///runtime.example.invalid%2Fx", ""},
 		{"grpc://runtime.example.invalid%2Fx:50051", ""},
+		// IPv6 zones are escaped in the URL and never read as a Cloud domain.
+		{"grpc://passthrough:///%5Bfe80::1%25eth0%5D:50051", "http://[fe80::1%25eth0]:8090"},
+		{"passthrough:///%5Bfe80::1%25a.spiceai.io%5D:50051", "https://[fe80::1%25a.spiceai.io]:8090"},
 		{"runtime.example.invalid:https", ""},
 		// Schemes flightTransport does not strip cannot be dialed by Flight
 		// either, so HTTP must not quietly pick a transport for them.

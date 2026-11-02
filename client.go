@@ -395,7 +395,9 @@ func httpUrlFor(flightAddress string) string {
 	if tls {
 		scheme = "https"
 	}
-	return scheme + "://" + net.JoinHostPort(host, defaultRuntimeHttpPort)
+	// url.URL escapes an IPv6 zone ("fe80::1%eth0" becomes "%25eth0"), which a
+	// plain string join would leave as an invalid URL escape.
+	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(host, defaultRuntimeHttpPort)}).String()
 }
 
 // defaultRuntimeHttpPort is the port the Spice runtime serves its HTTP API on
@@ -507,6 +509,11 @@ func isPort(port string) bool {
 
 // isCloudHost reports whether host is a Spice Cloud host.
 func isCloudHost(host string) bool {
+	// An IPv6 literal is never a Cloud host, even when its zone identifier
+	// (fe80::1%a.spiceai.io) looks like one.
+	if strings.Contains(host, ":") {
+		return false
+	}
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	return host == "spiceai.io" || strings.HasSuffix(host, ".spiceai.io")
 }
