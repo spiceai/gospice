@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -435,29 +436,30 @@ func flightTargetHost(address string) (host string, tls bool, ok bool) {
 		}
 	}
 	authority := target
-	if i := strings.Index(target, "://"); i >= 0 {
-		scheme := strings.ToLower(target[:i])
-		rest := target[i+3:]
-		switch scheme {
+	if strings.Contains(target, "://") {
+		// gRPC parses a resolver target as a URL and dials its decoded path, so
+		// decode it the same way: passthrough:///unix%3A%2Fpath is a socket and
+		// dns:///%5B::1%5D:50051 is an IPv6 endpoint.
+		u, err := url.Parse(target)
+		if err != nil {
+			return "", false, false
+		}
+		switch strings.ToLower(u.Scheme) {
 		case "dns", "passthrough":
-			slash := strings.Index(rest, "/")
-			if slash < 0 {
-				return "", false, false
-			}
-			// dns://resolver/host names a resolver the HTTP client does not use;
-			// a host derived from it could resolve to a different deployment, so
-			// such a target needs WithHttpAddress.
-			if scheme == "dns" && slash > 0 {
-				return "", false, false
-			}
-			authority = rest[slash+1:]
 		default:
 			return "", false, false
 		}
-		if j := strings.IndexAny(authority, "/?#"); j >= 0 {
-			authority = authority[:j]
+		// dns://resolver/host names a resolver the HTTP client does not use;
+		// a host derived from it could resolve to a different deployment, so
+		// such a target needs WithHttpAddress.
+		if strings.EqualFold(u.Scheme, "dns") && u.Host != "" {
+			return "", false, false
 		}
-	} else if strings.ContainsAny(target, "/?#") {
+		authority = strings.TrimPrefix(u.Path, "/")
+		if authority == "" || strings.ContainsAny(authority, "/?#") {
+			return "", false, false
+		}
+	} else if strings.ContainsAny(target, "/?#%") {
 		return "", false, false
 	}
 	// passthrough:///unix:/path hands the socket address to gRPC's dialer.

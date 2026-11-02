@@ -194,6 +194,13 @@ func TestCustomFlightAddressDerivesHttpUrlOnTheSameHost(t *testing.T) {
 		{"passthrough:///unix:/tmp/spice.sock", ""},
 		{"passthrough:unix:spice.sock", ""},
 		{"dns:///unix:443", ""},
+		// gRPC dials the decoded resolver path.
+		{"grpc://passthrough:///unix%3A%2Ftmp%2Fruntime.spiceai.io", ""},
+		{"passthrough:///unix%3A%2Ftmp%2Fspice.sock", ""},
+		{"dns:///%5B::1%5D:50051", "https://[::1]:8090"},
+		{"dns:///runtime.example.invalid%3A443", "https://runtime.example.invalid:8090"},
+		{"passthrough:///runtime.example.invalid%2Fx", ""},
+		{"grpc://runtime.example.invalid%2Fx:50051", ""},
 		{"runtime.example.invalid:https", ""},
 		// Schemes flightTransport does not strip cannot be dialed by Flight
 		// either, so HTTP must not quietly pick a transport for them.
@@ -334,6 +341,7 @@ func TestDerivedHttpUrlUsesTheFlightTransport(t *testing.T) {
 		"runtime.example.invalid:50051",
 		"grpc://[::1]:15151",
 		"dns:///runtime.example.invalid:443",
+		"dns:///%5B::1%5D:50051",
 		"grpc://dns:///runtime.example.invalid:50051",
 		"passthrough:///runtime.example.invalid:50051",
 		"dns:runtime.example.invalid:443",
