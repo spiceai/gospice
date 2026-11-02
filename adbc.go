@@ -330,7 +330,7 @@ func (c *SpiceClient) acquireADBC() (*ADBCClient, error) {
 // can re-establish the connection before retrying.
 func (c *SpiceClient) execADBCWithBackoff(ctx context.Context, client *ADBCClient, sql string, params ...any) (array.RecordReader, error) {
 	var rdr array.RecordReader
-	err := c.withRetries(func() error {
+	err := c.withRetries(ctx, func() error {
 		var err error
 		rdr, err = c.queryADBCWithParams(ctx, client, sql, params...)
 		if err != nil {
