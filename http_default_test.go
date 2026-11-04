@@ -250,7 +250,7 @@ func TestCustomFlightAddressNeverSendsApiKeyToSpiceCloud(t *testing.T) {
 	); err != nil {
 		t.Fatalf("error initializing SpiceClient: %v", err)
 	}
-	spice.maxRetries = 0
+	spice.SetMaxRetries(0)
 
 	ctx := context.Background()
 	err := spice.RefreshDataset(ctx, "some_dataset", nil)
