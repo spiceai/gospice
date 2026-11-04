@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -83,15 +85,9 @@ func NewSpiceClient() *SpiceClient {
 }
 
 func NewSpiceClientWithAddress(flightAddress string) *SpiceClient {
-	// An address with no known HTTP counterpart keeps the Cloud endpoint this
-	// constructor has always defaulted to; WithHttpAddress names the runtime's own.
-	baseHttpUrl := defaultCloudConfig.HttpUrl
-	if paired, ok := defaultHttpUrlFor(flightAddress); ok {
-		baseHttpUrl = paired
-	}
 	spiceClient := &SpiceClient{
 		flightAddress: flightAddress,
-		baseHttpUrl:   baseHttpUrl,
+		baseHttpUrl:   httpUrlFor(flightAddress),
 		httpClient: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 10,
@@ -220,16 +216,10 @@ func (c *SpiceClient) Init(opts ...SpiceClientModifier) error {
 
 	// Options may have moved the Flight endpoint (WithFlightAddress,
 	// WithSpiceCloudAddress). Unless the caller named an HTTP endpoint of their
-	// own, follow it, so both halves of the client address the same runtime.
-	// Resolved from the Flight address the options settled on, so an address
-	// with no known counterpart falls back to the Cloud endpoint this client has
-	// always defaulted to rather than keeping one derived for a different runtime.
+	// own, follow it, so both halves of the client address the same runtime and
+	// the API key is only ever sent to a host the caller configured.
 	if !c.httpAddressSet {
-		if paired, ok := defaultHttpUrlFor(c.flightAddress); ok {
-			c.baseHttpUrl = paired
-		} else {
-			c.baseHttpUrl = defaultCloudConfig.HttpUrl
-		}
+		c.baseHttpUrl = httpUrlFor(c.flightAddress)
 	}
 
 	systemCertPool, err := x509.SystemCertPool()
@@ -405,6 +395,162 @@ func FlightHeadersInterceptor(headers map[string]string) grpc.UnaryClientInterce
 	}
 }
 
+// httpUrlFor returns the HTTP endpoint a client on flightAddress uses when no
+// WithHttpAddress was given.
+//
+// The two default Flight endpoints keep their known pairing, and any other
+// Spice Cloud Flight host uses the Spice Cloud HTTP endpoint. An HTTP endpoint
+// set explicitly through SPICE_HTTP_URL is kept for every other address, as
+// before. Otherwise a self-hosted runtime on a custom host or port is paired
+// with the runtime's default HTTP port (8090) on the same host, over HTTPS
+// unless the Flight address is plaintext (grpc://). A client on a custom Flight
+// address therefore never sends its HTTP calls, or the API key it was
+// configured with, to Spice Cloud or to any host the caller did not name.
+//
+// An address whose application host cannot be read — a unix socket, a resolver
+// scheme this client does not know — yields "", so HTTP calls fail rather than
+// reach a host the caller did not configure; WithHttpAddress fixes it.
+func httpUrlFor(flightAddress string) string {
+	if paired, ok := defaultHttpUrlFor(flightAddress); ok {
+		return paired
+	}
+	host, tls, ok := flightTargetHost(flightAddress)
+	if ok && isCloudHost(host) {
+		return defaultCloudConfig.HttpUrl
+	}
+	if defaultCloudConfig.httpUrlFromEnv {
+		return defaultCloudConfig.HttpUrl
+	}
+	if !ok {
+		return ""
+	}
+	scheme := "http"
+	if tls {
+		scheme = "https"
+	}
+	// url.URL escapes an IPv6 zone ("fe80::1%eth0" becomes "%25eth0"), which a
+	// plain string join would leave as an invalid URL escape.
+	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(host, defaultRuntimeHttpPort)}).String()
+}
+
+// defaultRuntimeHttpPort is the port the Spice runtime serves its HTTP API on
+// by default.
+const defaultRuntimeHttpPort = "8090"
+
+// flightTargetHost returns the application host a Flight address dials, and
+// whether that connection uses TLS.
+//
+// It starts from flightTransport, the same policy Sql (native Flight) and
+// SqlWithParams (ADBC) dial with, so the HTTP endpoint never uses a different
+// transport from the Flight connection: plaintext only for an explicit
+// grpc:// prefix, TLS for everything else. It then reads the dial target the
+// way gRPC does: a bare host[:port], or the dns: and passthrough: resolver
+// targets, whose application endpoint is the path after the authority.
+//
+// It reports false, so no HTTP endpoint is derived, for anything else:
+//   - a dns:// target with an explicit resolver authority, since that resolver
+//     is not the one the HTTP client uses;
+//   - unix: and unix-abstract: socket targets, alone or behind a transport or
+//     resolver prefix, which have no network host (net.SplitHostPort would
+//     otherwise read "unix" as a host name);
+//   - schemes flightTransport does not strip, such as grpc+tcp:// or GRPC://,
+//     which gRPC cannot dial either, so the Flight connection fails and HTTP
+//     must not quietly succeed in plaintext;
+//   - a port that is not a number.
+func flightTargetHost(address string) (host string, tls bool, ok bool) {
+	target, tls := flightTransport(address)
+	if isSocketTarget(target) {
+		return "", false, false
+	}
+	// Opaque resolver targets (dns:host:port, passthrough:host:port) name the
+	// application endpoint directly.
+	if i := strings.Index(target, ":"); i >= 0 && !strings.Contains(target, "://") {
+		switch strings.ToLower(target[:i]) {
+		case "dns", "passthrough":
+			target = strings.TrimPrefix(target[i+1:], "/")
+		}
+	}
+	authority := target
+	if strings.Contains(target, "://") {
+		// gRPC parses a resolver target as a URL and dials its decoded path, so
+		// decode it the same way: passthrough:///unix%3A%2Fpath is a socket and
+		// dns:///%5B::1%5D:50051 is an IPv6 endpoint.
+		u, err := url.Parse(target)
+		if err != nil {
+			return "", false, false
+		}
+		switch strings.ToLower(u.Scheme) {
+		case "dns", "passthrough":
+		default:
+			return "", false, false
+		}
+		// dns://resolver/host names a resolver the HTTP client does not use;
+		// a host derived from it could resolve to a different deployment, so
+		// such a target needs WithHttpAddress.
+		if strings.EqualFold(u.Scheme, "dns") && u.Host != "" {
+			return "", false, false
+		}
+		authority = strings.TrimPrefix(u.Path, "/")
+		if authority == "" || strings.ContainsAny(authority, "/?#") {
+			return "", false, false
+		}
+	} else if strings.ContainsAny(target, "/?#%") {
+		return "", false, false
+	}
+	// passthrough:///unix:/path hands the socket address to gRPC's dialer.
+	if isSocketTarget(authority) {
+		return "", false, false
+	}
+
+	host = authority
+	if h, port, err := net.SplitHostPort(authority); err == nil {
+		if !isPort(port) {
+			return "", false, false
+		}
+		host = h
+	} else if strings.Contains(authority, ":") && !strings.HasPrefix(authority, "[") {
+		// "scheme:opaque" targets have no host this client can name.
+		return "", false, false
+	} else {
+		host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	}
+	if host == "" || strings.ContainsAny(host, "@ ") {
+		return "", false, false
+	}
+	return host, tls, true
+}
+
+// isSocketTarget reports whether a gRPC target or dial address names a unix
+// domain socket (unix:path, unix:///path, unix-abstract:name).
+func isSocketTarget(target string) bool {
+	lower := strings.ToLower(target)
+	return strings.HasPrefix(lower, "unix:") || strings.HasPrefix(lower, "unix-abstract:")
+}
+
+// isPort reports whether port is a decimal TCP port number.
+func isPort(port string) bool {
+	if port == "" || len(port) > 5 {
+		return false
+	}
+	for _, r := range port {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// isCloudHost reports whether host is a Spice Cloud host.
+func isCloudHost(host string) bool {
+	// An IPv6 literal is never a Cloud host, even when its zone identifier
+	// (fe80::1%a.spiceai.io) looks like one.
+	if strings.Contains(host, ":") {
+		return false
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	return host == "spiceai.io" || strings.HasSuffix(host, ".spiceai.io")
+}
+
 // defaultHttpUrlFor returns the HTTP endpoint that belongs with a Flight
 // endpoint, and whether that pairing is known at all. The runtime serves Flight
 // and HTTP as one deployment, so a client querying a local runtime has to reach
@@ -412,19 +558,25 @@ func FlightHeadersInterceptor(headers map[string]string) grpc.UnaryClientInterce
 // HTTP endpoint means health checks, dataset refreshes, search and NSQL all
 // report on a runtime the caller never named.
 //
-// Only the two default endpoints have a counterpart this client can name. Any
-// other Flight address — a self-hosted runtime, one behind a proxy — may serve
-// its HTTP API anywhere, so it reports false and the caller keeps the HTTP
-// endpoint it already had rather than being pointed at this machine.
+// Only the two default endpoints have a counterpart this function names; see
+// httpUrlFor for every other address.
+//
+// A Flight endpoint moved by SPICE_FLIGHT_URL or SPICE_LOCAL_FLIGHT_URL pairs
+// with its HTTP default only when the matching HTTP variable was set too;
+// otherwise the built-in HTTP default would name a runtime the caller moved
+// away from (Spice Cloud, or this machine), so it is treated as custom.
 func defaultHttpUrlFor(flightAddress string) (string, bool) {
 	switch flightAddress {
 	case defaultCloudConfig.FlightUrl:
-		return defaultCloudConfig.HttpUrl, true
+		if defaultCloudConfig.pairingConfigured() {
+			return defaultCloudConfig.HttpUrl, true
+		}
 	case defaultLocalConfig.FlightUrl:
-		return defaultLocalConfig.HttpUrl, true
-	default:
-		return "", false
+		if defaultLocalConfig.pairingConfigured() {
+			return defaultLocalConfig.HttpUrl, true
+		}
 	}
+	return "", false
 }
 
 // flightTransport returns the target to dial for a Flight address and whether

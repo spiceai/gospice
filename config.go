@@ -12,19 +12,39 @@ const GO_SPICE_VERSION = "9.1.0"
 type ClientConfig struct {
 	HttpUrl   string `json:"http_url,omitempty"`
 	FlightUrl string `json:"flight_url,omitempty"`
+
+	// httpUrlFromEnv and flightUrlFromEnv record that HttpUrl and FlightUrl
+	// came from their environment variables rather than the built-in defaults.
+	// A client on a custom Flight address keeps an explicitly configured Cloud
+	// HTTP endpoint, and a Flight endpoint moved by the environment is only
+	// paired with an HTTP endpoint the environment also named.
+	httpUrlFromEnv   bool
+	flightUrlFromEnv bool
+}
+
+// pairingConfigured reports whether HttpUrl belongs with FlightUrl: both are
+// built-in defaults, or the HTTP endpoint was configured alongside an
+// environment-supplied Flight endpoint.
+func (c ClientConfig) pairingConfigured() bool {
+	return !c.flightUrlFromEnv || c.httpUrlFromEnv
 }
 
 func LoadConfig() ClientConfig {
-	return ClientConfig{
-		HttpUrl:   getEnvOrDefault("SPICE_HTTP_URL", "https://data.spiceai.io"),
-		FlightUrl: getEnvOrDefault("SPICE_FLIGHT_URL", "flight.spiceai.io:443"),
-	}
+	return loadConfig("SPICE_HTTP_URL", "https://data.spiceai.io", "SPICE_FLIGHT_URL", "flight.spiceai.io:443")
 }
 
 func LoadLocalConfig() ClientConfig {
+	return loadConfig("SPICE_LOCAL_HTTP_URL", "http://127.0.0.1:8090", "SPICE_LOCAL_FLIGHT_URL", "grpc://127.0.0.1:50051")
+}
+
+func loadConfig(httpEnv, httpDefault, flightEnv, flightDefault string) ClientConfig {
+	_, httpUrlFromEnv := os.LookupEnv(httpEnv)
+	_, flightUrlFromEnv := os.LookupEnv(flightEnv)
 	return ClientConfig{
-		HttpUrl:   getEnvOrDefault("SPICE_LOCAL_HTTP_URL", "http://127.0.0.1:8090"),
-		FlightUrl: getEnvOrDefault("SPICE_LOCAL_FLIGHT_URL", "grpc://127.0.0.1:50051"),
+		HttpUrl:          getEnvOrDefault(httpEnv, httpDefault),
+		FlightUrl:        getEnvOrDefault(flightEnv, flightDefault),
+		httpUrlFromEnv:   httpUrlFromEnv,
+		flightUrlFromEnv: flightUrlFromEnv,
 	}
 }
 
