@@ -755,6 +755,9 @@ func appendValueToBuilder(builder array.Builder, val any) error {
 		}
 	case *array.FixedSizeBinaryBuilder:
 		if v, ok := val.([]byte); ok {
+			if width := b.Type().(*arrow.FixedSizeBinaryType).ByteWidth; len(v) != width {
+				return fmt.Errorf("cannot convert %d bytes to fixed size binary of width %d", len(v), width)
+			}
 			b.Append(v)
 		} else {
 			return fmt.Errorf("cannot convert %T to fixed size binary", val)
